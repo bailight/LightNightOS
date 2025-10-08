@@ -1,29 +1,21 @@
-; boot/stage2_long.asm
-[org 0x8000]
+%include "boot.inc"
+[org BOOT_LOAD_ADDR]
 [bits 16]
 
-%define CR0_PE    1
-%define CR0_PG    (1<<31)
-%define CR4_PAE   (1<<5)
-%define MSR_EFER  0xC0000080
-%define EFER_LME  (1<<8)
-
-%define KERNEL_SECTORS  64
-
-stage2_entry:
+boot_entry:
     cli
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, 0x7000
+    mov sp, BOOT_STACK_ADDR
 
-    ; маяк (реальный режим)
+    ; маяк (реальный режим 16 bit)
     mov ah, 0x0E
     mov al, 'S'
     int 0x10
 
-    ; fast A20
+    ; fast A20, чтобы были больше 1 МВ
     in   al, 0x92
     or   al, 00000010b
     out  0x92, al
@@ -45,7 +37,6 @@ stage2_entry:
     mov cr0, eax
     jmp 0x08:pm32
 
-; =====================================================================
 [bits 32]
 pm32:
     mov ax, 0x10
@@ -55,15 +46,8 @@ pm32:
     mov fs, ax
     mov gs, ax
 
+    ;Инициализируем указатель на VGA
     mov dword [vga_ptr32], 0xB8000
-
-%macro PUT32 1
-    mov edi, [vga_ptr32]
-    mov ax, 0x0700 + %1
-    mov [edi], ax
-    add edi, 2
-    mov [vga_ptr32], edi
-%endmacro
 
     PUT32 'P'
 
@@ -72,6 +56,7 @@ pm32:
     mov ecx, (KERNEL_SECTORS*512)/4
     rep movsd
 
+    ; Включить PAE (расширение физического адреса)
     mov eax, cr4
     or  eax, CR4_PAE
     mov cr4, eax
@@ -88,7 +73,7 @@ pm32:
     or  eax, CR0_PG
     mov cr0, eax
 
-    ; ===== выводим флаг 16->32 и OK =====
+    ; ===== флаг 16->32 и OK =====
     mov edi, 0xB8000 + 160*21        ; строка 22
     mov esi, msg_16_32
     call putstr32
@@ -117,7 +102,6 @@ putstr32:
     pop eax
     ret
 
-; =====================================================================
 [bits 64]
 lm64:
     mov ax, 0x20
@@ -135,7 +119,7 @@ lm64:
     add rdi, 2
     mov word [rdi], 0x074F     ; 'O'
 
-    ; ===== выводим флаги 32->64 и OK =====
+    ; ===== флаги 32->64 и OK =====
     mov rdi, 0xB8000 + 160*23        ; строка 24
     mov rsi, msg_32_64
     call putstr64
@@ -166,7 +150,6 @@ putstr64:
     pop rax
     ret
 
-; =====================================================================
 ; ---------------- GDT ----------------
 align 8
 gdt:
@@ -180,8 +163,7 @@ gdt_ptr:
     dd gdt
 gdt_end:
 
-; =====================================================================
-; -------- identity map 0..1GiB --------
+; -------- Настройка таблицы страниц 0~1 ГБ памяти)--------
 align 4096
 pml4_table:
     dq pdpt_table + 0x003
@@ -201,7 +183,6 @@ pd_table:
 %assign i i+1
 %endrep
 
-; =====================================================================
 ; -------- DAP ядра --------
 DAP_KERN:
     db 0x10
@@ -222,7 +203,6 @@ disk_error_kern:
 
 vga_ptr32: dd 0
 
-; =====================================================================
 ; -------- строки-маячки --------
 msg_16_32: db "[16->32]", 0
 msg_pm32:  db "PM32 OK", 0

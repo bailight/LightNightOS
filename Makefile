@@ -6,13 +6,13 @@ build:
 	mkdir -p build/boot build/kernel
 
 build/boot/mbr.bin: src/boot/mbr.asm | build
-	nasm -f bin $< -o $@
+	nasm -f bin $< -o $@ -I src/include/
 
 build/boot/boot.bin: src/boot/boot.asm | build
-	nasm -f bin $< -o $@
+	nasm -f bin $< -o $@ -I src/include/
 
 build/kernel/kmain64.o: src/kernel/kmain64.asm | build
-	nasm -f elf64 $< -o $@
+	nasm -f elf64 $< -o $@ -I src/include/
 
 build/kernel/kernel.elf: build/kernel/kmain64.o src/kernel/linker.ld
 # 	ld -nostdlib -m elf_x86_64 -T src/kernel/linker.ld -o build/kernel/kernel.elf build/kernel/kmain64.o
