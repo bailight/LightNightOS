@@ -25,9 +25,11 @@ DAP:
 BOOT_DRIVE: db 0
 
 %macro PUT32 1
-    mov edi, [vga_ptr32]
-    mov ax, 0x0700 + %1
-    mov [edi], ax
-    add edi, 2
-    mov [vga_ptr32], edi
+    push    ax
+    push    edi
+    mov     edi, 0xB8000 + 160*12
+    mov     ax, 0x0700 + %1
+    mov     [edi], ax
+    pop     edi
+    pop     ax
 %endmacro
