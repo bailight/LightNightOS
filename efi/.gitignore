@@ -1,0 +1,5 @@
+root
+OVMF.fd
+*.efi
+*.so
+*.o
