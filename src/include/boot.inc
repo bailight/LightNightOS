@@ -11,6 +11,8 @@
 %define CR4_PAE   (1<<5)
 %define MSR_EFER  0xC0000080
 %define EFER_LME  (1<<8)
+
+; Количество секторов, занимаемых ядром
 %define KERNEL_SECTORS  64
 
 ; --- Disk Address Packet (протокол EDD) ---
@@ -24,12 +26,4 @@ DAP:
 
 BOOT_DRIVE: db 0
 
-%macro PUT32 1
-    push    ax
-    push    edi
-    mov     edi, 0xB8000 + 160*12
-    mov     ax, 0x0700 + %1
-    mov     [edi], ax
-    pop     edi
-    pop     ax
-%endmacro
+

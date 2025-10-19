@@ -1,31 +1,69 @@
+# Путь к QEMU (архитектура x86_64 QEMU)
+
 QEMU := qemu-system-x86_64
+
+# Выходной каталог сборки
+
+BUILD = ./build
+
+# Каталог исходного кода
+
+SRC = ./src
+
+# Автоматически запускать цель "run" при выполнении "make" (сборка и загрузка системы)
 
 all: run
 
+# Инициализация каталога сборки
+# Создать подкаталог для хранения артефактов сборки, обеспечивая его существование во время компиляции
+
 build:
-	mkdir -p build/boot build/kernel
+	mkdir -p $(BUILD)/boot build/kernel
 
-build/boot/mbr.bin: src/boot/mbr.asm | build
-	nasm -f bin $< -o $@ -I src/include/
+# Скомпилировать все файлы .asm в каталоге src/boot в файлы .bin в каталоге build/boot
 
-build/boot/boot.bin: src/boot/boot.asm | build
-	nasm -f bin $< -o $@ -I src/include/
+build/boot/%.bin: $(SRC)/boot/%.asm | build
+	nasm -f bin $< -o $@ -I $(SRC)/include/
 
-build/kernel/kmain64.o: src/kernel/kmain64.asm | build
-	nasm -f elf64 $< -o $@ -I src/include/
+# Компилировать файл сборки запуска ядра в целевой файл ELF (для использования линкером)
 
-build/kernel/kernel.elf: build/kernel/kmain64.o src/kernel/linker.ld
-# 	ld -nostdlib -m elf_x86_64 -T src/kernel/linker.ld -o build/kernel/kernel.elf build/kernel/kmain64.o
-	ld -nostdlib -z max-page-size=0x1000 -T src/kernel/linker.ld -o $@ $<
+build/kernel/kmain64.o: $(SRC)/kernel/kmain64.asm | build
+	nasm -f elf64 $< -o $@ -I $(SRC)/include/
 
-build/kernel/kernel.bin: build/kernel/kernel.elf
-	objcopy -O binary $< $@
+# Компилировать C файл ядра
 
-img/disk.img: build/boot/mbr.bin build/boot/boot.bin build/kernel/kernel.bin
+build/kernel/kernel.o: $(SRC)/kernel/kernel.c | build
+	gcc -m64 -O2 -Wall -Wextra -c $< -o $@ -I ../lib/
+
+# Объединить целевой файл ядра со скриптом компоновки для создания исполняемого ядра в формате ELF
+
+build/kernel/kernel.elf: $(BUILD)/kernel/kmain64.o $(BUILD)/kernel/kernel.o
+	ld -nostdlib -z max-page-size=0x1000 -T $(SRC)/kernel/linker.ld -o $@ $^
+
+#Конвертировать ядро ​​формата ELF в чистый двоичный файл
+
+build/kernel/kernel.bin: $(BUILD)/kernel/kernel.elf
+	objcopy -O binary $< $@ 
+
+# Создание образ диска, содержащий загрузчик и ядро ​​(имитация жёсткого диска)
+# Шаг 1: Создать пустой файл образа размером 10 МБ (если = /dev/zero, он будет заполнен нулевыми данными)
+# Шаг 2: Записать MBR (главную загрузочную запись) в сектор 0 (первый исполняемый файл, загруженный с жёсткого диска)
+# Шаг 3: Записать boot.bin в следующий сектор (загрузчик второго уровня, загруженный MBR)
+# Шаг 4: Записать kernel.bin в указанный сектор (ядро, загруженное загрузчиком)
+# Параметры dd:
+# bs=1M: Размер блока 1 МБ
+# bs=512: Размер блока 512 байт (стандартный размер сектора диска)
+# count=1: Записать только один блок (гарантирует, что MBR занимает только сектор 0)
+# seek=1: Пропустить сектор 0 и начать запись с сектора 1 (чтобы избежать перезаписи MBR)
+
+img/disk.img: $(BUILD)/boot/mbr.bin $(BUILD)/boot/boot.bin $(BUILD)/kernel/kernel.bin
 	dd if=/dev/zero of=$@ bs=1M count=10 status=none
-	dd if=build/boot/mbr.bin of=$@ bs=512 count=1 conv=notrunc status=none
-	dd if=build/boot/boot.bin of=$@ bs=512 seek=1 conv=notrunc status=none
-	dd if=build/kernel/kernel.bin of=$@ bs=512 seek=100 conv=notrunc status=none
+	dd if=$(BUILD)/boot/mbr.bin of=$@ bs=512 count=1 conv=notrunc status=none
+	dd if=$(BUILD)/boot/boot.bin of=$@ bs=512 seek=1 conv=notrunc status=none
+	dd if=$(BUILD)/kernel/kernel.bin of=$@ bs=512 seek=100 conv=notrunc status=none
+
+
+# Загружение образ диска через эмулятор QEMU и запуск систему.
 
 run: img/disk.img
 	$(QEMU) -drive format=raw,file=img/disk.img -m 256M -serial stdio -no-reboot -no-shutdown
