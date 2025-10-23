@@ -191,6 +191,14 @@ disk_error_kern:
 
 vga_ptr32: dd 0
 
+DAP_KERN:
+    db 0x10
+    db 0x00
+    dw KERNEL_SECTORS
+    dw 0x0000
+    dw 0x9000
+    dq 100
+
 ; -------- строки-маячки --------
 msg_16_32: db "[16->32]", 0
 msg_pm32:  db "PM32 OK", 0
