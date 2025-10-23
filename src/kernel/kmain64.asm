@@ -1,7 +1,11 @@
 [bits 64]
 global update_cursor
 global _kstart
+global lidt
+global sti
+global timer_handler
 extern kernel_init
+extern timer_handler_c
 
 VGA_WIDTH    equ 80
 VGA_HEIGHT   equ 25
@@ -17,36 +21,75 @@ _kstart:
     jmp kernel_init
 
 update_cursor:
-    ; 1. 计算光标在VGA缓冲区的绝对位置：row * 80 + col
-    mov rax, rdi        ; rax = 行号
-    mov rbx, VGA_WIDTH  ; rbx = 每行字符数（80）
-    mul rbx             ; rax = 行号 * 80（无符号乘法，结果存rax）
-    add rax, rsi        ; rax = 最终光标位置（0~1999，覆盖25*80=2000个位置）
-    mov rcx, rax        ; 暂存光标位置到rcx（避免后续操作覆盖rax）
+    mov rax, rdi
+    mov rbx, VGA_WIDTH
+    mul rbx
+    add rax, rsi
+    mov rcx, rax
 
-    ; 2. 发送命令：设置光标高位字节（命令码0x0E）
-    mov dx, VGA_CTRL_PORT  ; dx = 控制端口（64位out指令要求端口在dx）
-    mov al, 0x0E           ; al = 命令码（设置光标高位）
-    out dx, al             ; 发送命令到控制端口
-
-    ; 3. 发送光标高位数据（rax的高8位）
-    mov dx, VGA_DATA_PORT  ; dx = 数据端口
-    mov al, ch             ; al = 光标位置的高8位（rcx的高8位，即ch）
-    out dx, al             ; 发送高位数据
-
-    ; 4. 发送命令：设置光标低位字节（命令码0x0F）
     mov dx, VGA_CTRL_PORT
-    mov al, 0x0F           ; al = 命令码（设置光标低位）
+    mov al, 0x0E
     out dx, al
 
-    ; 5. 发送光标低位数据（rax的低8位）
     mov dx, VGA_DATA_PORT
-    mov al, cl             ; al = 光标位置的低8位（rcx的低8位，即cl）
+    mov al, ch 
     out dx, al
 
-    ret  ; 函数返回（回到C代码）
+    mov dx, VGA_CTRL_PORT
+    mov al, 0x0F
+    out dx, al
 
-; 异常停机（备用）
+    mov dx, VGA_DATA_PORT
+    mov al, cl
+    out dx, al
+
+    ret
+
+lidt:
+    lidt [rdi]
+    ret
+
+sti:
+    sti
+    ret
+
+timer_handler:
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
+
+    call timer_handler_c
+
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+
+    iretq
+
 .hang:
     hlt
     jmp .hang
