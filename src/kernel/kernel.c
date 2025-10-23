@@ -4,6 +4,7 @@ extern void update_cursor(uint8_t row, uint8_t col);
 extern void lidt(void* idtr);
 extern void sti();
 extern void timer_handler();
+extern void keyboard_handler(); 
 
 #define VGA_CTRL_PORT 0x3D4
 #define VGA_DATA_PORT 0x3D5
@@ -15,6 +16,7 @@ extern void timer_handler();
 #define PIC_MASTER_DATA 0x21
 #define PIC_SLAVE_CMD   0xA0
 #define PIC_SLAVE_DATA  0xA1
+#define KEYBOARD_PORT 0x60
 
 static uint8_t cursor_row = 0;
 static uint8_t cursor_col = 0;
@@ -86,6 +88,45 @@ void print_str(const char* str) {
     }
 }
 
+static inline void outb(uint16_t port, uint8_t data) {
+    asm volatile ("outb %0, %1" : : "a"(data), "d"(port));
+}
+static inline uint8_t inb(uint16_t port) {
+    uint8_t data;
+    asm volatile ("inb %1, %0" : "=a"(data) : "d"(port));
+    return data;
+}
+
+static char scancode_to_char(uint8_t scancode) {
+    static char map[] = {
+        0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
+        '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
+        0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
+        0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
+        '*', 0, ' '
+    };
+    if (scancode < sizeof(map)) return map[scancode];
+    return 0;
+}
+
+void keyboard_handler_c() {
+    uint8_t scancode = inb(KEYBOARD_PORT);
+    char c = scancode_to_char(scancode);
+
+    if (c) {
+        print_char(c);
+    } else if (scancode == 0x0E) {
+        if (cursor_col > 0) {
+            cursor_col--;
+            print_char(' ');
+            cursor_col--;
+        }
+    }
+
+    update_cursor(cursor_row, cursor_col);
+    outb(PIC_MASTER_CMD, 0x20);
+}
+
 typedef struct {
     uint16_t offset_low;
     uint16_t segment;
@@ -118,33 +159,23 @@ void idt_init() {
     };
 
     idt_set_gate(32, timer_handler);
-
+    idt_set_gate(33, keyboard_handler);
     lidt(&idtr);
 }
 
-static inline void outb(uint16_t port, uint8_t data) {
-    asm volatile ("outb %0, %1" : : "a"(data), "d"(port));
-}
-static inline uint8_t inb(uint16_t port) {
-    uint8_t data;
-    asm volatile ("inb %1, %0" : "=a"(data) : "d"(port));
-    return data;
-}
+
 
 void pic_init() {
     outb(PIC_MASTER_CMD, 0x11);
     outb(PIC_SLAVE_CMD, 0x11);
-
     outb(PIC_MASTER_DATA, 0x20);
     outb(PIC_SLAVE_DATA, 0x28);
-
     outb(PIC_MASTER_DATA, 0x04);
     outb(PIC_SLAVE_DATA, 0x02);
-
     outb(PIC_MASTER_DATA, 0x01);
     outb(PIC_SLAVE_DATA, 0x01);
 
-    outb(PIC_MASTER_DATA, inb(PIC_MASTER_DATA) & ~(1 << 0));
+    outb(PIC_MASTER_DATA, inb(PIC_MASTER_DATA) & ~(1 << 0) & ~(1 << 1));
 }
 
 void timer_handler_c() {
