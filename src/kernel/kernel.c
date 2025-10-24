@@ -2,7 +2,7 @@
 
 extern void update_cursor(uint8_t row, uint8_t col);
 extern void lidt(void* idtr);
-extern void sti();
+extern void sti(void);
 extern void timer_handler();
 extern void keyboard_handler(); 
 
@@ -16,7 +16,9 @@ extern void keyboard_handler();
 #define PIC_MASTER_DATA 0x21
 #define PIC_SLAVE_CMD   0xA0
 #define PIC_SLAVE_DATA  0xA1
-#define KEYBOARD_PORT 0x60
+
+#define PS2_DATA    0x60
+#define PS2_STATUS  0x64
 
 static uint8_t cursor_row = 0;
 static uint8_t cursor_col = 0;
@@ -72,8 +74,7 @@ void print_char(char c) {
                 cursor_col = 0;
                 cursor_row++;
             }
-            uint32_t idx = vga_index(cursor_row, cursor_col);
-            vga_buf[idx] = (vga_color << 8) | (uint8_t)c;
+            vga_buf[vga_index(cursor_row, cursor_col)] = (vga_color << 8) | (uint8_t)c;
             cursor_col++;
             break;
     }
@@ -89,49 +90,60 @@ void print_str(const char* str) {
 }
 
 static inline void outb(uint16_t port, uint8_t data) {
-    asm volatile ("outb %0, %1" : : "a"(data), "d"(port));
+    __asm__ __volatile__ ("outb %0, %1" : : "a"(data), "Nd"(port));
 }
 static inline uint8_t inb(uint16_t port) {
     uint8_t data;
-    asm volatile ("inb %1, %0" : "=a"(data) : "d"(port));
+    __asm__ __volatile__ ("inb %1, %0" : "=a"(data) : "Nd"(port));
     return data;
+}
+
+/* --- clearing buffer 8042 before turning on IRQ --- */
+static void kbd_flush(void){
+    for (int i = 0; i < 256; ++i) {
+        uint8_t st = inb(PS2_STATUS);
+        if (st & 0x01) (void)inb(PS2_DATA);
+        else break;
+    }
 }
 
 static char scancode_to_char(uint8_t scancode) {
     static char map[] = {
-        0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-        '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-        0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`',
-        0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0,
-        '*', 0, ' '
+        0,  27,'1','2','3','4','5','6','7','8','9','0','-','=', '\b',
+        '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n', 0,
+        'a','s','d','f','g','h','j','k','l',';','\'','`',   0,'\\',
+        'z','x','c','v','b','n','m',',','.','/',           0,   0,   0,' '
     };
     if (scancode < sizeof(map)) return map[scancode];
     return 0;
 }
 
+/* --- keyboard handler: read ALL pending bytes --- */
 void keyboard_handler_c() {
-    uint8_t scancode = inb(KEYBOARD_PORT);
+    while (inb(PS2_STATUS) & 0x01) {
+        uint8_t scancode = inb(PS2_DATA);
 
-    if (scancode & 0x80) {
-        outb(PIC_MASTER_CMD, 0x20);  // EOI
-        return;
-    }
+        if (scancode & 0x80) {
+            continue; // ignoting break-codes
+        }
 
-    char c = scancode_to_char(scancode);
-    if (c) {
-        print_char(c);
-    } else if (scancode == 0x0E) {  
-        if (cursor_col > 0) {
-            cursor_col--;
-            print_char(' ');
-            cursor_col--;
+        if (scancode == 0x0E) { // Backspace
+            if (cursor_col > 0) {
+                cursor_col--;
+                print_char(' ');
+                cursor_col--;
+            }
+        } else {
+            char c = scancode_to_char(scancode);
+            if (c) print_char(c);
         }
     }
 
     update_cursor(cursor_row, cursor_col);
-    outb(PIC_MASTER_CMD, 0x20);
+    outb(PIC_MASTER_CMD, 0x20);  // EOI mastery
 }
 
+/* ---------------- IDT ---------------- */
 typedef struct {
     uint16_t offset_low;
     uint16_t segment;
@@ -142,20 +154,23 @@ typedef struct {
     uint32_t reserved;
 } __attribute__((packed)) idt_entry_t;
 
+static idt_entry_t idt[256] = {0};
 
-idt_entry_t idt[256] = {0};
-
-void idt_set_gate(int vector, void* handler) {
+static void idt_set_gate(int vector, void* handler) {
     uint64_t addr = (uint64_t)handler;
-    idt[vector].offset_low  = addr & 0xFFFF;
-    idt[vector].offset_mid  = (addr >> 16) & 0xFFFF;
-    idt[vector].offset_high = (addr >> 32) & 0xFFFFFFFF;
-    idt[vector].segment     = 0x08;
-    idt[vector].ist         = 1;
-    idt[vector].flags       = 0x8F;
+    idt[vector].offset_low  = (uint16_t)(addr & 0xFFFF);
+    idt[vector].offset_mid  = (uint16_t)((addr >> 16) & 0xFFFF);
+    idt[vector].offset_high = (uint32_t)((addr >> 32) & 0xFFFFFFFF);
+    idt[vector].segment     = 0x18;   // 64-bit code selector from GDT
+    idt[vector].ist         = 0;      // not using IST
+    idt[vector].flags       = 0x8E;   // P=1,DPL=0, Type=0xE (interrupt gate)
+    idt[vector].reserved    = 0;
 }
 
-void idt_init() {
+static void idt_init(void) {
+    // array already zeroed, then only IRQ1 (33 = 0x21)
+    idt_set_gate(33, keyboard_handler);
+
     struct {
         uint16_t limit;
         uint64_t base;
@@ -163,38 +178,45 @@ void idt_init() {
         .limit = sizeof(idt) - 1,
         .base  = (uint64_t)idt
     };
-
-    idt_set_gate(33, keyboard_handler);
     lidt(&idtr);
 }
 
-void pic_init() {
-    outb(PIC_MASTER_CMD, 0x11);
-    outb(PIC_SLAVE_CMD, 0x11);
-    outb(PIC_MASTER_DATA, 0x20);
-    outb(PIC_SLAVE_DATA, 0x28);
-    outb(PIC_MASTER_DATA, 0x04);
-    outb(PIC_SLAVE_DATA, 0x02);
-    outb(PIC_MASTER_DATA, 0x01);
-    outb(PIC_SLAVE_DATA, 0x01);
+/* ---------------- PIC ---------------- */
+static void pic_init(void) {
+    // shutting all IRQ during remap
+    outb(PIC_MASTER_DATA, 0xFF);
+    outb(PIC_SLAVE_DATA,  0xFF);
 
-    outb(PIC_MASTER_DATA, 0xFE);
-    outb(PIC_SLAVE_DATA, 0xFF);
+    outb(PIC_MASTER_CMD,  0x11);
+    outb(PIC_SLAVE_CMD,   0x11);
+    outb(PIC_MASTER_DATA, 0x20);   // master offset 0x20
+    outb(PIC_SLAVE_DATA,  0x28);   // slave  offset 0x28
+    outb(PIC_MASTER_DATA, 0x04);   // slave на IRQ2
+    outb(PIC_SLAVE_DATA,  0x02);
+    outb(PIC_MASTER_DATA, 0x01);   // 8086 mode
+    outb(PIC_SLAVE_DATA,  0x01);
+
+    outb(PIC_MASTER_DATA, 0xFD);   // 1111 1101b -> IRQ1 allowed
+    outb(PIC_SLAVE_DATA,  0xFF);   // everything is closed
 }
 
-
+/* ---------------- entry ---------------- */
 void kernel_init(void) {
     idt_init();
     pic_init();
-    
-    clear_screen();
 
+    clear_screen();
     print_str("Hello, QEMU!\n");
     print_str("This is a test for VGA text mode.\n");
     print_str("Kernel initialized successfully.\n");
     print_str("This is LightNightOS.\n");
+    print_str("\nKeyboard ready. Type here: ");
 
-    // sti();
-    
+    // clear the controller buffer before enabling interrupts
+    kbd_flush();
+
+    sti();
+
     for (;;) __asm__ __volatile__("hlt");
 }
+
