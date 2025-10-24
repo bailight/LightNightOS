@@ -22,17 +22,50 @@ extern void keyboard_handler();
 
 static uint8_t cursor_row = 0;
 static uint8_t cursor_col = 0;
-static uint8_t vga_color = 0x07;
+static uint8_t vga_color  = 0x07;
+
+/* ===== Virtual Terminals (F1..F4) ===== */
+#define TTY_COUNT 4
+static uint16_t tty_buf[TTY_COUNT][VGA_WIDTH*VGA_HEIGHT];
+static uint8_t  tty_row[TTY_COUNT], tty_col[TTY_COUNT], tty_color[TTY_COUNT];
+static int      tty_cur = 0;
+
+
+static inline uint16_t* TBUF(void){ return tty_buf[tty_cur]; }
+
+static void vt_render_active(void){
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
+    for (int i=0;i<VGA_WIDTH*VGA_HEIGHT;i++) vga[i] = TBUF()[i];
+    update_cursor(cursor_row, cursor_col);
+}
+
+static void vt_switch(int n){
+    if (n < 0 || n >= TTY_COUNT || n == tty_cur) return;
+    /* saving old TTY state */
+    tty_row[tty_cur] = cursor_row;
+    tty_col[tty_cur] = cursor_col;
+
+    /* switch */
+    tty_cur = n;
+
+    /* restore new TTY state */
+    cursor_row = tty_row[tty_cur];
+    cursor_col = tty_col[tty_cur];
+    vga_color  = tty_color[tty_cur];
+
+    vt_render_active();
+}
 
 static uint32_t vga_index(uint8_t row, uint8_t col) {
     return row * VGA_WIDTH + col;
 }
 
 void clear_screen() {
-    uint16_t* vga_buf = (uint16_t*)VGA_MEMORY;
-    uint16_t empty_char = (vga_color << 8) | ' ';
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
+    uint16_t empty = (vga_color << 8) | ' ';
     for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
-        vga_buf[i] = empty_char;
+        vga[i]     = empty;
+        TBUF()[i]  = empty;
     }
     cursor_row = 0;
     cursor_col = 0;
@@ -40,47 +73,42 @@ void clear_screen() {
 }
 
 static void scroll_screen() {
-    uint16_t* vga_buf = (uint16_t*)VGA_MEMORY;
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
     for (int row = 1; row < VGA_HEIGHT; row++) {
         for (int col = 0; col < VGA_WIDTH; col++) {
-            uint32_t src_idx = vga_index(row, col);
-            uint32_t dst_idx = vga_index(row - 1, col);
-            vga_buf[dst_idx] = vga_buf[src_idx];
+            int src = row * VGA_WIDTH + col;
+            int dst = (row - 1) * VGA_WIDTH + col;
+            TBUF()[dst] = TBUF()[src];
+            vga[dst]    = TBUF()[dst];
         }
     }
     for (int col = 0; col < VGA_WIDTH; col++) {
-        uint32_t idx = vga_index(VGA_HEIGHT - 1, col);
-        vga_buf[idx] = (vga_color << 8) | ' ';
+        int idx = (VGA_HEIGHT - 1) * VGA_WIDTH + col;
+        TBUF()[idx] = (vga_color << 8) | ' ';
+        vga[idx]    = TBUF()[idx];
     }
     cursor_row = VGA_HEIGHT - 1;
     cursor_col = 0;
 }
 
 void print_char(char c) {
-    uint16_t* vga_buf = (uint16_t*)VGA_MEMORY;
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
     switch (c) {
-        case '\n':
-            cursor_row++;
-            cursor_col = 0;
-            break;
-        case '\r':
-            cursor_col = 0;
-            break;
-        case '\t':
-            cursor_col = (cursor_col + 4) & ~3;
-            break;
+        case '\n': cursor_row++; cursor_col = 0; break;
+        case '\r': cursor_col = 0; break;
+        case '\t': cursor_col = (cursor_col + 4) & ~3; break;
         default:
-            if (cursor_col >= VGA_WIDTH) {
-                cursor_col = 0;
-                cursor_row++;
+            if (cursor_col >= VGA_WIDTH) { cursor_col = 0; cursor_row++; }
+            {
+                int idx = vga_index(cursor_row, cursor_col);
+                uint16_t val = (vga_color << 8) | (uint8_t)c;
+                TBUF()[idx] = val;   // to TTY buffer
+                vga[idx]    = val;   // to the screen
+                cursor_col++;
             }
-            vga_buf[vga_index(cursor_row, cursor_col)] = (vga_color << 8) | (uint8_t)c;
-            cursor_col++;
             break;
     }
-    if (cursor_row >= VGA_HEIGHT) {
-        scroll_screen();
-    }
+    if (cursor_row >= VGA_HEIGHT) scroll_screen();
 }
 
 void print_str(const char* str) {
@@ -125,6 +153,11 @@ void keyboard_handler_c() {
 
         if (scancode & 0x80) {
             continue; // ignoting break-codes
+        }
+        
+        if (!(scancode & 0x80) && scancode >= 0x3B && scancode <= 0x3E) {
+            vt_switch(scancode - 0x3B);  // 0..3
+            continue;
         }
 
         if (scancode == 0x0E) { // Backspace
@@ -202,6 +235,16 @@ static void pic_init(void) {
 
 /* ---------------- entry ---------------- */
 void kernel_init(void) {
+    /* init VT state */
+    for (int t=0; t<TTY_COUNT; ++t) {
+        tty_color[t] = 0x07;
+        tty_row[t] = tty_col[t] = 0;
+        uint16_t empty = (tty_color[t] << 8) | ' ';
+        for (int i=0; i<VGA_WIDTH*VGA_HEIGHT; ++i)
+            tty_buf[t][i] = empty;
+    }
+    
+    tty_cur = 0;
     idt_init();
     pic_init();
 
@@ -211,6 +254,8 @@ void kernel_init(void) {
     print_str("Kernel initialized successfully.\n");
     print_str("This is LightNightOS.\n");
     print_str("\nKeyboard ready. Type here: ");
+    
+    vt_render_active();
 
     // clear the controller buffer before enabling interrupts
     kbd_flush();
