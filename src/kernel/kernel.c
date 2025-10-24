@@ -111,11 +111,16 @@ static char scancode_to_char(uint8_t scancode) {
 
 void keyboard_handler_c() {
     uint8_t scancode = inb(KEYBOARD_PORT);
-    char c = scancode_to_char(scancode);
 
+    if (scancode & 0x80) {
+        outb(PIC_MASTER_CMD, 0x20);  // EOI
+        return;
+    }
+
+    char c = scancode_to_char(scancode);
     if (c) {
         print_char(c);
-    } else if (scancode == 0x0E) {
+    } else if (scancode == 0x0E) {  
         if (cursor_col > 0) {
             cursor_col--;
             print_char(' ');
@@ -137,6 +142,7 @@ typedef struct {
     uint32_t reserved;
 } __attribute__((packed)) idt_entry_t;
 
+
 idt_entry_t idt[256] = {0};
 
 void idt_set_gate(int vector, void* handler) {
@@ -145,8 +151,8 @@ void idt_set_gate(int vector, void* handler) {
     idt[vector].offset_mid  = (addr >> 16) & 0xFFFF;
     idt[vector].offset_high = (addr >> 32) & 0xFFFFFFFF;
     idt[vector].segment     = 0x08;
-    idt[vector].ist         = 0;
-    idt[vector].flags       = 0x8E;
+    idt[vector].ist         = 1;
+    idt[vector].flags       = 0x8F;
 }
 
 void idt_init() {
@@ -158,12 +164,9 @@ void idt_init() {
         .base  = (uint64_t)idt
     };
 
-    idt_set_gate(32, timer_handler);
     idt_set_gate(33, keyboard_handler);
     lidt(&idtr);
 }
-
-
 
 void pic_init() {
     outb(PIC_MASTER_CMD, 0x11);
@@ -175,23 +178,15 @@ void pic_init() {
     outb(PIC_MASTER_DATA, 0x01);
     outb(PIC_SLAVE_DATA, 0x01);
 
-    outb(PIC_MASTER_DATA, inb(PIC_MASTER_DATA) & ~(1 << 0) & ~(1 << 1));
+    outb(PIC_MASTER_DATA, 0xFE);
+    outb(PIC_SLAVE_DATA, 0xFF);
 }
 
-void timer_handler_c() {
-    print_str("Interrupt triggered!\n");
-    outb(PIC_MASTER_CMD, 0x20);
-}
 
-void timer_set_freq(uint32_t freq) {
-    if (freq == 0) return;
-    uint32_t divisor = 1193180 / freq;
-    outb(0x43, 0x36);
-    outb(0x40, (uint8_t)(divisor & 0xFF));
-    outb(0x40, (uint8_t)((divisor >> 8) & 0xFF));
-}
-
-void kernel_init() {
+void kernel_init(void) {
+    idt_init();
+    pic_init();
+    
     clear_screen();
 
     print_str("Hello, QEMU!\n");
@@ -199,18 +194,7 @@ void kernel_init() {
     print_str("Kernel initialized successfully.\n");
     print_str("This is LightNightOS.\n");
 
-    cursor_row = 4;
-    cursor_col = 0;
+    // sti();
     
-    update_cursor(cursor_row, cursor_col);
-
-    idt_init();
-    pic_init();
-    timer_set_freq(1);
-    sti();
-    
-
-    while (1) {
-        asm volatile ("hlt"); 
-    }
+    for (;;) __asm__ __volatile__("hlt");
 }

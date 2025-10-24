@@ -2,6 +2,8 @@
 
 QEMU := qemu-system-x86_64
 
+CFLAGS := -m64 -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -O2 -Wall -Wextra
+
 # Выходной каталог сборки
 
 BUILD = ./build
@@ -33,7 +35,7 @@ build/kernel/kmain64.o: $(SRC)/kernel/kmain64.asm | build
 # Компилировать C файл ядра
 
 build/kernel/kernel.o: $(SRC)/kernel/kernel.c | build
-	gcc -m64 -O2 -Wall -Wextra -c $< -o $@ -I ../lib/
+	gcc $(CFLAGS) -c $< -o $@ -I ../lib/
 
 # Объединить целевой файл ядра со скриптом компоновки для создания исполняемого ядра в формате ELF
 
