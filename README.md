@@ -1,45 +1,48 @@
 # LightNightOS
-Проект по ОС 【Камилла Тазиева и Чэнь Жохань】
+OS project 【Tazieva Kamilla & Chen Ruohan】
 
-## Введение в проект
+## Intro to the project
 
-Легковесное ядро ​​x86_64 для изучения принципов работы операционной системы, в настоящее время поддерживает полный процесс от загрузки MBR до инициализации 64-битного ядра.
+The lightweight x86_64 kernel for learning how the operating system works, currently supports the full process from MBR boot to 64-bit kernel initialization.
 
-## Разделение труда
+## Separation of tasks
 
-Камилла Тазиева:
+Tazieva Kamilla:
 
-- boot.asm, прерывание
-- Ввод текста (делает)
-- Базовая обработка аппаратных и программных прерываний
-- Обработка ошибок и ловушек, сбор контекстной информации
-- Базовая клавиатура и виртуальный терминал
-
-Чэнь Жохань:
-
-- mbr.asm и Makefile, ReadME, kernel для print
-- Первоначальная карта памяти (делает)
-- Страничное разбиение
-- Менеджер памяти уровня malloc
+- README (editing)
+- template version
+- boot.asm, mbr.asm, kmain64.asm, linker.ld, boot.inc
+- interruptions, keyboard handler (for input)
+- virtual terminals
+- ...
 
 
-## Структура проекта
+Chen Ruohan:
+
+- README
+- updated template version
+- test version of interruptions
+- 1st version of boot.asm and boot.inc, Makefile, kernel.c
+- ...
+
+
+## Project structure
 
 ```plaintext
 LightNightOS/
 ├── src/
-│ ├── boot/ # Код загрузчика
-│ ├── kernel/ # Код ядра
-│ └── include/ # Общие заголовочные файлы/определения макросов
-├── build/ # Промежуточные продукты сборки (генерируются автоматически)
-├── img/ # Образ диска (генерируется автоматически)
-├── Makefile # Скрипт сборки
-└── README.md # Описание проекта
+│ ├── boot/ # Bootloader code
+│ ├── kernel/ # Kernel code
+│ └── include/ # Common header files/macros definitions
+├── build/ # Intermediate assembly products (generates automatically)
+├── img/ # Disk image (generates automatically)
+├── Makefile # Build script
+└── README.md # Project description
 ```
 
-## Зависимости от окружения
+## Dependencies on the environment
 
-- Ассемблер: nasm
-- Компоновщик: ld
-- Эмулятор: qemu-system-x86_64
-- Другие инструменты: dd, objcopy
+- Assembler: nasm
+- Linker: ld
+- Emulator: qemu-system-x86_64
+- Other tools: dd, objcopy
