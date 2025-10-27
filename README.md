@@ -11,7 +11,7 @@ Tazieva Kamilla:
 
 - README (editing)
 - template version
-- boot.asm, mbr.asm, kmain64.asm, linker.ld, boot.inc
+- boot.asm, mbr.asm, kmain64.asm, linker.ld, boot.inc, updated kernel.c
 - interruptions, keyboard handler (for input)
 - virtual terminals
 - ...
