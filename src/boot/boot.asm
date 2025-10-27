@@ -17,7 +17,7 @@ stage2_entry:
     mov ss, ax
     mov sp, 0x7000
 
-    ; маяк (реальный режим)
+    ; beacon (realtime mode)
     mov ah, 0x0E
     mov al, 'S'
     int 0x10
@@ -27,7 +27,7 @@ stage2_entry:
     or   al, 00000010b
     out  0x92, al
 
-    ; ===== читаем ядро BIOS-ом в 0x9000:0000 =====
+    ; ===== reading kernel using BIOS in 0x9000:0000 =====
     mov si, DAP_KERN
     mov ah, 0x42
     int 0x13
@@ -37,7 +37,7 @@ stage2_entry:
     mov al, 'K'
     int 0x10
 
-    ; ----- GDT и protected mode -----
+    ; ----- GDT & protected mode -----
     lgdt [gdt_ptr]
     mov eax, cr0
     or  eax, CR0_PE
@@ -87,18 +87,18 @@ pm32:
     or  eax, CR0_PG
     mov cr0, eax
 
-    ; ===== выводим флаг 16->32 и OK =====
-    mov edi, 0xB8000 + 160*21        ; строка 22
+    ; ===== print flag 16->32 and OK =====
+    mov edi, 0xB8000 + 160*21        ; line 22
     mov esi, msg_16_32
     call putstr32
 
-    mov edi, 0xB8000 + 160*22        ; строка 23
+    mov edi, 0xB8000 + 160*22        ; line 23
     mov esi, msg_pm32
     call putstr32
 
     jmp 0x18:lm64
 
-; ---- функция вывода строки в 32-бит VGA ----
+; ---- function of printing line in 32-bits VGA ----
 putstr32:
     push eax
     push edi
@@ -126,7 +126,7 @@ lm64:
     mov fs, ax
     mov gs, ax
 
-    ; ===== выводим флаги 32->64 и OK =====
+    ; ===== printing flags 32->64 and OK =====
     mov rdi, 0xB8000 + 160*23
     mov rsi, msg_32_64
     call putstr64
@@ -138,7 +138,7 @@ lm64:
     mov rax, 0x00100000
     jmp rax
 
-; ---- функция вывода строки в 64-бит VGA ----
+; ---- function of printing line in 64-bits VGA ----
 putstr64:
     push rax
     push rdi
