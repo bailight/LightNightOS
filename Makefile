@@ -20,7 +20,7 @@ all: run
 # Создать подкаталог для хранения артефактов сборки, обеспечивая его существование во время компиляции
 
 build:
-	mkdir -p $(BUILD)/boot build/kernel
+	mkdir -p $(BUILD)/boot $(BUILD)/kernel img/
 
 # Скомпилировать все файлы .asm в каталоге src/boot в файлы .bin в каталоге build/boot
 
@@ -37,15 +37,30 @@ build/kernel/kmain64.o: $(SRC)/kernel/kmain64.asm | build
 build/kernel/kernel.o: $(SRC)/kernel/kernel.c | build
 	gcc $(CFLAGS) -c $< -o $@ -I ../lib/
 
+build/kernel/memory.o: $(SRC)/kernel/memory.c | build
+	gcc $(CFLAGS) -c $< -o $@ -I $(SRC)/lib/
+
+build/kernel/console.o: $(SRC)/kernel/console.c | build
+	gcc $(CFLAGS) -c $< -o $@ -I $(SRC)/lib/
+
+build/kernel/keyboard.o: $(SRC)/kernel/keyboard.c | build
+	gcc $(CFLAGS) -c $< -o $@ -I $(SRC)/lib/
+
+build/kernel/interrupt.o: $(SRC)/kernel/interrupt.c | build
+	gcc $(CFLAGS) -c $< -o $@ -I $(SRC)/lib/
+
 # Объединить целевой файл ядра со скриптом компоновки для создания исполняемого ядра в формате ELF
 
-build/kernel/kernel.elf: $(BUILD)/kernel/kmain64.o $(BUILD)/kernel/kernel.o
+# build/kernel/kernel.elf: $(BUILD)/kernel/kmain64.o $(BUILD)/kernel/kernel.o
+# 	ld -nostdlib -z max-page-size=0x1000 -T $(SRC)/kernel/linker.ld -o $@ $^
+
+build/kernel/kernel.elf: $(BUILD)/kernel/kmain64.o $(BUILD)/kernel/kernel.o $(BUILD)/kernel/memory.o $(BUILD)/kernel/console.o $(BUILD)/kernel/interrupt.o $(BUILD)/kernel/keyboard.o
 	ld -nostdlib -z max-page-size=0x1000 -T $(SRC)/kernel/linker.ld -o $@ $^
 
 #Конвертировать ядро ​​формата ELF в чистый двоичный файл
 
 build/kernel/kernel.bin: $(BUILD)/kernel/kernel.elf
-	objcopy -O binary $< $@ 
+	objcopy -O binary $< $@
 
 # Создание образ диска, содержащий загрузчик и ядро ​​(имитация жёсткого диска)
 # Шаг 1: Создать пустой файл образа размером 10 МБ (если = /dev/zero, он будет заполнен нулевыми данными)

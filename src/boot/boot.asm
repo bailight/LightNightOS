@@ -1,6 +1,3 @@
-[org 0x8000]
-[bits 16]
-
 %define CR0_PE    1
 %define CR0_PG    (1<<31)
 %define CR4_PAE   (1<<5)
@@ -8,8 +5,15 @@
 %define EFER_LME  (1<<8)
 
 %define KERNEL_SECTORS  64
+%define E820_BUF        0x5000
+%define E820_MAX_ENTRIES 32
 
-stage2_entry:
+e820_count: dd 0
+
+[org 0x8000]
+[bits 16]
+
+boot_entry:
     cli
     xor ax, ax
     mov ds, ax
@@ -27,11 +31,10 @@ stage2_entry:
     or   al, 00000010b
     out  0x92, al
 
-    ; ===== reading kernel using BIOS in 0x9000:0000 =====
-    mov si, DAP_KERN
-    mov ah, 0x42
-    int 0x13
-    jc  disk_error_kern
+    call read_e820
+
+    ; reading kernel using BIOS in 0x9000:0000
+    call disk_read_kernel
 
     mov ah, 0x0E
     mov al, 'K'
@@ -42,9 +45,72 @@ stage2_entry:
     mov eax, cr0
     or  eax, CR0_PE
     mov cr0, eax
+
     jmp 0x08:pm32
 
-; =====================================================================
+read_e820:
+    pusha
+    mov di, E820_BUF
+    xor ebx, ebx
+    mov edx, 0x534D4150
+
+.read_loop:
+    mov eax, 0xE820
+    mov [di + 20], dword 1
+    mov ecx, 24
+    int 0x15
+
+    jc .done
+    cmp eax, 0x534D4150
+    jne .done
+
+    inc dword [e820_count]
+    add di, 24
+
+    cmp dword [e820_count], E820_MAX_ENTRIES
+    jge .done
+
+    test ebx, ebx
+    jnz .read_loop
+
+.done:
+    ; Memory layout read successful
+    mov ah, 0x0E
+    mov al, 'M'
+    int 0x10
+
+    popa
+    ret
+
+disk_read_kernel:
+    pusha
+    mov si, DAP_KERN
+    mov ah, 0x42
+    int 0x13
+
+    ; CF=1 - error with read disk
+    jc disk_error_kern
+
+    popa
+    ret
+
+disk_error_kern:
+    mov ah, 0x0E
+    mov al, 'X'
+    int 0x10
+
+DAP_KERN:
+    db 0x10
+    db 0x00
+    dw KERNEL_SECTORS
+    dw 0x0000
+    dw 0x9000
+    dq 100
+
+; ==============================================
+; change mode：realtime mode → protect mode
+; ==============================================
+
 [bits 32]
 pm32:
     mov ax, 0x10
@@ -55,16 +121,6 @@ pm32:
     mov gs, ax
 
     mov dword [vga_ptr32], 0xB8000
-
-%macro PUT32 1
-    mov edi, [vga_ptr32]
-    mov ax, 0x0700 + %1
-    mov [edi], ax
-    add edi, 2
-    mov [vga_ptr32], edi
-%endmacro
-
-    PUT32 'P'
 
     mov esi, 0x00090000
     mov edi, 0x00100000
@@ -98,11 +154,12 @@ pm32:
 
     jmp 0x18:lm64
 
-; ---- function of printing line in 32-bits VGA ----
+; function of printing line in 32-bits VGA
 putstr32:
     push eax
     push edi
     push esi
+
 .put_loop32:
     lodsb
     test al, al
@@ -110,13 +167,17 @@ putstr32:
     mov ah, 0x07
     stosw
     jmp .put_loop32
+
 .done32:
     pop esi
     pop edi
     pop eax
     ret
 
-; =====================================================================
+; ==============================================
+; change mode: protect mode -> long mode
+; ==============================================
+
 [bits 64]
 lm64:
     mov ax, 0x20
@@ -135,10 +196,13 @@ lm64:
     mov rsi, msg_lm64
     call putstr64
 
+    mov rdi, E820_BUF
+    mov rsi, [e820_count]
+
     mov rax, 0x00100000
     jmp rax
 
-; ---- function of printing line in 64-bits VGA ----
+; function of printing line in 64-bits VGA
 putstr64:
     push rax
     push rdi
@@ -157,7 +221,10 @@ putstr64:
     pop rax
     ret
 
-; ---------------- GDT ----------------
+; ==============================================
+; Global Descriptor Table (GDT)
+; ==============================================
+
 align 8
 gdt:
     dq 0x0000000000000000
@@ -169,6 +236,10 @@ gdt_ptr:
     dw gdt_end - gdt - 1
     dd gdt
 gdt_end:
+
+; ==============================================
+; Page table initialization
+; ==============================================
 
 align 4096
 pml4_table:
@@ -189,18 +260,6 @@ pd_table:
 %assign i i+1
 %endrep
 
-DAP_KERN:
-    db 0x10
-    db 0x00
-    dw KERNEL_SECTORS
-    dw 0x0000
-    dw 0x9000
-    dq 100
-
-disk_error_kern:
-    mov ah, 0x0E
-    mov al, 'X'
-    int 0x10
 .hang:
     cli
     hlt

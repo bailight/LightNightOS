@@ -24,36 +24,7 @@ section .text
 _kstart:
     mov rsp, stack_top
 
-    mov rdi, 0
-    mov rsi, 0
-    call update_cursor
-
     jmp kernel_init
-
-update_cursor:
-    mov rax, rdi
-    mov rbx, VGA_WIDTH
-    mul rbx
-    add rax, rsi
-    mov rcx, rax
-
-    mov dx, VGA_CTRL_PORT
-    mov al, 0x0E
-    out dx, al
-
-    mov dx, VGA_DATA_PORT
-    mov al, ch 
-    out dx, al
-
-    mov dx, VGA_CTRL_PORT
-    mov al, 0x0F
-    out dx, al
-
-    mov dx, VGA_DATA_PORT
-    mov al, cl
-    out dx, al
-
-    ret
 
 lidt:
     lidt [rdi]
