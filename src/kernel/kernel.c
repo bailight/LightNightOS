@@ -13,10 +13,17 @@ void kernel_init() {
 
     print_str("Kernel initialized successfully.\n");
     print_str("This is LightNightOS.\n");
+
+    printk("This test print: num=%d, hex=%x, str=%s\n", 123, 0xABC, "test");
+
+    print_str_color("memory init --- \n", RED, BLACK);
+
+	init_memory();
+
     print_str("\nKeyboard ready. Type here: ");
     
     vt_render_active();
     sti();
 
-    for (;;) __asm__ __volatile__("hlt");
+    while(1);
 }

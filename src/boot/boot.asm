@@ -5,7 +5,7 @@
 %define EFER_LME  (1<<8)
 
 %define KERNEL_SECTORS  64
-%define E820_BUF        0x5000
+%define E820_BUF        0x7E00
 %define E820_MAX_ENTRIES 32
 
 e820_count: dd 0
@@ -26,12 +26,12 @@ boot_entry:
     mov al, 'S'
     int 0x10
 
+    call read_e820
+
     ; fast A20
     in   al, 0x92
     or   al, 00000010b
     out  0x92, al
-
-    call read_e820
 
     ; reading kernel using BIOS in 0x9000:0000
     call disk_read_kernel
@@ -56,8 +56,8 @@ read_e820:
 
 .read_loop:
     mov eax, 0xE820
-    mov [di + 20], dword 1
     mov ecx, 24
+    mov dword [es:di + 20], 0
     int 0x15
 
     jc .done
@@ -65,9 +65,10 @@ read_e820:
     jne .done
 
     inc dword [e820_count]
-    add di, 24
+    add di, 20
 
-    cmp dword [e820_count], E820_MAX_ENTRIES
+    mov eax, [e820_count]
+    cmp eax, E820_MAX_ENTRIES
     jge .done
 
     test ebx, ebx
@@ -125,6 +126,16 @@ pm32:
     mov esi, 0x00090000
     mov edi, 0x00100000
     mov ecx, (KERNEL_SECTORS*512)/4
+    rep movsd
+
+    mov esi, e820_count
+    mov edi, 0x00110000
+    mov ecx, 1
+    rep movsd
+    
+    mov esi, E820_BUF
+    mov ecx, [e820_count]
+    imul ecx, ecx, 5
     rep movsd
 
     mov eax, cr4
@@ -196,8 +207,8 @@ lm64:
     mov rsi, msg_lm64
     call putstr64
 
-    mov rdi, E820_BUF
-    mov rsi, [e820_count]
+    ; mov rdi, E820_BUF
+    ; mov rsi, [e820_count]
 
     mov rax, 0x00100000
     jmp rax
@@ -244,6 +255,10 @@ gdt_end:
 align 4096
 pml4_table:
     dq pdpt_table + 0x003
+    times 255 dq 0
+    dq pdpt_table_high + 0x003
+    times 254 dq 0
+
 
 align 4096
 pdpt_table:
@@ -253,10 +268,23 @@ pdpt_table:
     dq 0
 
 align 4096
+pdpt_table_high:
+    dq pd_table_high + 0x003
+    times 511 dq 0
+
+align 4096
 pd_table:
 %assign i 0
 %rep 512
     dq (i*0x200000) + 0x083
+%assign i i+1
+%endrep
+
+align 4096  
+pd_table_high:
+%assign i 0
+%rep 512
+    dq (i * 0x200000) + 0x083
 %assign i i+1
 %endrep
 

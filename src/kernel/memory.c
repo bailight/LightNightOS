@@ -1,2 +1,29 @@
 #include "memory.h"
+#include "console.h"
 #include "../lib/stdint.h"
+
+void init_memory() {
+	int i,j;
+	unsigned long TotalMem = 0 ;
+	struct Memory_E820_Formate *p = NULL;	
+	
+	printk_color(BLUE, BLACK, "Display Physics Address MAP \nType(1:RAM, 2:ROM or Reserved, 3:ACPI Reclaim Memory, 4:ACPI NVS Memory, Others:Undefine)\n");
+	p = (struct Memory_E820_Formate *)0xffff800000007e00;
+
+	for(i = 0;i < 16;i++){
+		printk_color(ORANGE, BLACK, "Address:%#010x, %08x\tLength:%#010x, %08x\tType:%#010x\n", p->address2, p->address1, p->length2, p->length1, p->type);
+		unsigned long tmp = 0;
+		if(p->type == 1)
+		{
+			tmp = p->length2;
+			TotalMem +=  p->length1;
+			TotalMem +=  tmp  << 32;
+		}
+
+		p++;
+		if(p->type > 4)
+			break;		
+	}
+
+	printk_color(ORANGE,BLACK, "OS Can Used Total RAM:%#018lx\n",TotalMem);
+}
