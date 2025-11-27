@@ -1,48 +1,46 @@
 [bits 64]
-global update_cursor
+
 global _kstart
 global lidt
 global sti
+
 global keyboard_handler
-extern keyboard_handler_c
+global timer_handler
+
 extern kernel_init
-
-VGA_WIDTH    equ 80
-VGA_HEIGHT   equ 25
-VGA_MEMORY   equ 0xB8000
-VGA_CTRL_PORT equ 0x3D4
-VGA_DATA_PORT equ 0x3D5
-
-section .bss
-align 16
-stack_bottom:
-resb 16384
-stack_top:
+extern keyboard_handler_c
+extern timer_handler_c
 
 section .text
 
-_kstart:
-    mov rsp, stack_top
 
-    jmp kernel_init
+_kstart:
+    mov rsp, 0x90000
+    call kernel_init
+
+.hang:
+    hlt
+    jmp .hang
+
 
 lidt:
     lidt [rdi]
     ret
 
+; void sti(void)
 sti:
     sti
     ret
 
-keyboard_handler:
-    swapgs
+
+%macro PUSH_ALL 0
     push rax
-    push rbx
     push rcx
     push rdx
+    push rbx
+    push rbp
     push rsi
     push rdi
-    push rbp
     push r8
     push r9
     push r10
@@ -51,9 +49,9 @@ keyboard_handler:
     push r13
     push r14
     push r15
+%endmacro
 
-    call keyboard_handler_c
-
+%macro POP_ALL 0
     pop r15
     pop r14
     pop r13
@@ -62,16 +60,26 @@ keyboard_handler:
     pop r10
     pop r9
     pop r8
-    pop rbp
     pop rdi
     pop rsi
+    pop rbp
+    pop rbx
     pop rdx
     pop rcx
-    pop rbx
     pop rax
+%endmacro
 
+; IRQ1
+keyboard_handler:
+    PUSH_ALL
+    call keyboard_handler_c
+    POP_ALL
     iretq
 
-.hang:
-    hlt
-    jmp .hang
+; IRQ0
+timer_handler:
+    PUSH_ALL
+    call timer_handler_c
+    POP_ALL
+    iretq
+
