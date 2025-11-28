@@ -35,10 +35,10 @@ void kernel_init() {
     print_str("\nTimer: dots should appear over time.\n");
 
     vt_render_active();
-    sti();          // включаем прерывания
+    sti();          // interruptions on
 
     while (1) {
-        // всё делаем в хендлерах
+        // everything in handlers
     }
 }
 
