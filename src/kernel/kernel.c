@@ -4,8 +4,17 @@
 #include "keyboard.h"
 #include "interrupt.h"
 #include "timer.h"
+#include "interrupts.h"
+
+static void test_invalid_opcode(void) {
+    __asm__ __volatile__ (".byte 0x0F, 0x0B"); // ud2
+}
 
 void kernel_init() {
+    idt_init();
+    
+    // test_invalid_opcode(); // crash! (okay, i really meant to make it)
+    
     console_init();
 
     interrupt_init();
