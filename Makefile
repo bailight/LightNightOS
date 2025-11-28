@@ -57,7 +57,7 @@ img/disk.img: $(BUILD)/boot/mbr.bin $(BUILD)/boot/boot.bin $(BUILD)/kernel/kerne
 	dd if=$(BUILD)/kernel/kernel.bin of=$@ bs=512 seek=100 conv=notrunc status=none
 
 run: img/disk.img
-	$(QEMU) -drive format=raw,file=img/disk.img -m 256M -serial stdio -no-reboot -no-shutdown
+	$(QEMU) -drive format=raw,file=img/disk.img -m 2G -serial stdio -no-reboot -no-shutdown
 
 clean:
 	rm -rf $(BUILD) img/disk.img

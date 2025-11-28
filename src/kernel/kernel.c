@@ -6,6 +6,8 @@
 #include "timer.h"
 #include "interrupts.h"
 
+struct Global_Memory_Descriptor memory_management_struct = {{0},0};
+
 static void test_invalid_opcode(void) {
     __asm__ __volatile__ (".byte 0x0F, 0x0B"); // ud2
 }
