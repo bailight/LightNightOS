@@ -33,8 +33,8 @@
 #define YELLOW  VGA_YELLOW
 #define GREEN   VGA_LIGHT_GREEN
 #define BLUE    VGA_LIGHT_BLUE
-#define INDIGO  VGA_LIGHT_CYAN
-#define PURPLE  VGA_LIGHT_MAGENTA
+#define CYAN  VGA_LIGHT_CYAN
+#define MAGENTA  VGA_LIGHT_MAGENTA
 
 #define ZEROPAD	1		/* pad with zero */
 #define SIGN	2		/* unsigned/signed long */
