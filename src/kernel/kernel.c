@@ -15,20 +15,12 @@ static void test_invalid_opcode(void) {
 
 static void worker_A(void *arg) {
     (void)arg;
-    while (1) {
-        print_str_color("A", VGA_LIGHT_GREEN, VGA_BLACK);
-        for (volatile uint64_t i = 0; i < 1000000; ++i) { }
-        process_yield();
-    }
+    print_str_color("A", VGA_LIGHT_GREEN, VGA_BLACK);
 }
 
 static void worker_B(void *arg) {
     (void)arg;
-    while (1) {
-        print_str_color("B", VGA_LIGHT_CYAN, VGA_BLACK);
-        for (volatile uint64_t i = 0; i < 1000000; ++i) { }
-        process_yield();
-    }
+    print_str_color("B", VGA_LIGHT_CYAN, VGA_BLACK);
 }
 
 void kernel_init() {
