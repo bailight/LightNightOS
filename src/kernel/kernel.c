@@ -23,6 +23,31 @@ static void worker_B(void *arg) {
     print_str_color("B", VGA_LIGHT_CYAN, VGA_BLACK);
 }
 
+static void test_malloc_demo(void) {
+    print_str("\n[TEST] malloc demo start\n");
+
+    void *p1 = malloc(64);
+    void *p2 = malloc(128);
+
+    printk("[TEST] malloc(64) -> 0x%016lx", (unsigned long)p1);
+    print_str("\n");
+
+    printk("[TEST] malloc(128) -> 0x%016lx", (unsigned long)p2);
+    print_str("\n");
+
+    if (!p1 || !p2) {
+        print_str("[TEST] malloc FAILED (null pointer)\n");
+        return;
+    }
+
+    unsigned char *c1 = (unsigned char *)p1;
+    for (int i = 0; i < 64; ++i) {
+        c1[i] = (unsigned char)(i & 0xFF);
+    }
+
+    print_str("[TEST] wrote 64 bytes into p1, seems fine\n");
+}
+
 void kernel_init() {
     idt_init();
     
@@ -42,6 +67,8 @@ void kernel_init() {
     printk("This test print: num=%d, hex=%x, str=%s\n", 123, 0xABC, "test");
     
     init_memory();
+    
+    test_malloc_demo();
     
     scheduler_init();
 
