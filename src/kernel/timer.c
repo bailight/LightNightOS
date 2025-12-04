@@ -35,9 +35,10 @@ void timer_handler_c(struct regs_t *regs) {
 
     g_ticks++;
 
-    if (g_ticks % 100 == 0) {
-        print_str_color(".", VGA_LIGHT_GREY, VGA_BLACK);
-    }
+    // for test
+    // if (g_ticks % 100 == 0) {
+    //     print_str_color(".", VGA_LIGHT_GREY, VGA_BLACK);
+    // }
 
     outb(PIC_MASTER_CMD, 0x20);   // EOI
 }

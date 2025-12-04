@@ -64,9 +64,23 @@ void keyboard_handler_c(void) {
                 print_char(c);
             }
         }
+
+        switch(scancode) {
+        case 0x48:
+            move_cursor_up();
+            break;
+        case 0x50:
+            move_cursor_down();
+            break;
+        case 0x4B:
+            move_cursor_left();
+            break;
+        case 0x4D:
+            move_cursor_right();
+            break;
+        }
     }
 
-    // Update cursor position
     update_cursor(get_cursor_row(), get_cursor_col());
     outb(PIC_MASTER_CMD, 0x20);
 }

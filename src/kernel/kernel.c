@@ -68,12 +68,12 @@ void kernel_init() {
     
     init_memory();
     
-    test_malloc_demo();
+    // test_malloc_demo();
     
     scheduler_init();
 
-    process_create(worker_A, 0);
-    process_create(worker_B, 0);
+    // process_create(worker_A, 0);
+    // process_create(worker_B, 0);
 
     print_str("\nKeyboard ready. Type here: ");
     print_str("\nTimer: dots should appear over time.\n");

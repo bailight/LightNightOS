@@ -7,6 +7,16 @@
 #define VGA_CTRL_PORT 0x3D4
 #define VGA_DATA_PORT 0x3D5
 
+#define HISTORY_SIZE 1000
+
+static uint16_t simple_history[HISTORY_SIZE][VGA_WIDTH];
+static int history_write_pos = 0;
+static int history_count = 0;
+static int is_viewing_history = 0;
+static int history_view_offset = 0;
+
+static uint16_t screen_backup[VGA_HEIGHT][VGA_WIDTH];
+
 static uint8_t cursor_row = 0;
 static uint8_t cursor_col = 0;
 static uint8_t vga_color  = 0x07;
@@ -27,7 +37,145 @@ static inline uint8_t vga_make_color(uint8_t fg, uint8_t bg) {
     return (bg << 4) | (fg & 0x0F);
 }
 
-// set vga color
+static void history_init_simple(void) {
+    history_write_pos = 0;
+    history_count = 0;
+    is_viewing_history = 0;
+    history_view_offset = 0;
+
+}
+static void save_line_to_history(int line_num) {
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
+    
+    for (int col = 0; col < VGA_WIDTH; col++) {
+        uint32_t idx = line_num * VGA_WIDTH + col;
+        uint16_t vga_entry = vga[idx];
+        
+        simple_history[history_write_pos][col] = vga_entry;
+    }
+    
+    history_write_pos = (history_write_pos + 1) % HISTORY_SIZE;
+    if (history_count < HISTORY_SIZE) {
+        history_count++;
+    }
+}
+
+static void backup_current_screen(void) {
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
+    
+    for (int row = 0; row < VGA_HEIGHT; row++) {
+        for (int col = 0; col < VGA_WIDTH; col++) {
+            uint32_t idx = row * VGA_WIDTH + col;
+            uint16_t vga_entry = vga[idx];
+            
+            screen_backup[row][col] = vga_entry;
+        }
+    }
+}
+
+static void restore_screen_from_backup(void) {
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
+    
+    for (int row = 0; row < VGA_HEIGHT; row++) {
+        for (int col = 0; col < VGA_WIDTH; col++) {
+            uint32_t idx = row * VGA_WIDTH + col;
+            uint16_t vga_entry = screen_backup[row][col];
+            
+            vga[idx] = vga_entry;
+            TBUF()[idx] = vga_entry;
+        }
+    }
+}
+
+static void show_history_lines(void) {
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
+    
+    uint16_t default_color = vga_make_color(VGA_LIGHT_GREY, VGA_BLACK);
+    uint16_t default_attr = default_color << 8;
+    
+    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
+        vga[i] = default_attr | ' ';
+    }
+    
+    int lines_to_show = VGA_HEIGHT - 1;
+    if (lines_to_show > history_count) {
+        lines_to_show = history_count;
+    }
+    
+    if (lines_to_show <= 0) {
+        lines_to_show = 0;
+    } else {
+        int start_index = (history_write_pos - lines_to_show - history_view_offset) % HISTORY_SIZE;
+        if (start_index < 0) start_index += HISTORY_SIZE;
+        
+        for (int screen_row = 0; screen_row < lines_to_show; screen_row++) {
+            int hist_index = (start_index + screen_row) % HISTORY_SIZE;
+            
+            for (int col = 0; col < VGA_WIDTH; col++) {
+                uint32_t idx = screen_row * VGA_WIDTH + col;
+                uint16_t saved_entry = simple_history[hist_index][col];
+                
+                uint8_t ch = saved_entry & 0xFF;
+                if (ch >= 32 && ch <= 126) {
+                    vga[idx] = saved_entry;
+                } else {
+                    vga[idx] = default_attr | ' ';
+                }
+            }
+        }
+    }
+    
+    const char* prompt = "(History View - Press any key to return)";
+    int prompt_len = strlen(prompt);
+    int prompt_row = lines_to_show;
+    if (prompt_row >= VGA_HEIGHT) prompt_row = VGA_HEIGHT - 1;
+    
+    int prompt_col = (VGA_WIDTH - prompt_len) / 2;
+    if (prompt_col < 0) prompt_col = 0;
+    
+    uint8_t prompt_color = vga_make_color(VGA_YELLOW, VGA_BLACK);
+    uint16_t prompt_attr = prompt_color << 8;
+    
+    for (int i = 0; i < prompt_len && prompt_col + i < VGA_WIDTH; i++) {
+        uint32_t idx = prompt_row * VGA_WIDTH + prompt_col + i;
+        vga[idx] = prompt_attr | prompt[i];
+    }
+    
+    update_cursor(prompt_row, prompt_col);
+}
+
+static void view_history_up(void) {
+    if (history_count == 0) return;
+    
+    if (!is_viewing_history) {
+        backup_current_screen();
+        is_viewing_history = 1;
+        history_view_offset = 0;
+    } else {
+        history_view_offset++;
+        if (history_view_offset > history_count - (VGA_HEIGHT - 1)) {
+            history_view_offset = history_count - (VGA_HEIGHT - 1);
+        }
+        if (history_view_offset < 0) history_view_offset = 0;
+    }
+    
+    show_history_lines();
+}
+
+static void view_history_down(void) {
+    if (!is_viewing_history) return;
+    
+    history_view_offset--;
+    if (history_view_offset < 0) {
+        is_viewing_history = 0;
+        history_view_offset = 0;
+        restore_screen_from_backup();
+        update_cursor(cursor_row, cursor_col);
+    } else {
+        show_history_lines();
+    }
+}
+
 void set_vga_color(uint8_t fg, uint8_t bg) {
     vga_color = vga_make_color(fg, bg);
     tty_color[tty_cur] = vga_color;
@@ -69,6 +217,8 @@ static void scroll_screen(void) {
     volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
     uint16_t empty = (vga_color << 8) | ' ';
 
+    save_line_to_history(0);
+
     for (int row = 1; row < VGA_HEIGHT; row++) {
         for (int col = 0; col < VGA_WIDTH; col++) {
             uint32_t src_idx = vga_index(row, col);
@@ -86,12 +236,18 @@ static void scroll_screen(void) {
 
     cursor_row = VGA_HEIGHT - 1;
     cursor_col = 0;
+    
+    backup_current_screen();
 }
 
 void clear_screen(void) {
     volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
     uint16_t empty = (vga_color << 8) | ' ';
 
+    for (int row = 0; row < VGA_HEIGHT; row++) {
+        save_line_to_history(row);
+    }
+    
     for (int i = 0; i < VGA_WIDTH*VGA_HEIGHT; i++) {
         vga[i] = empty;
         TBUF()[i] = empty;
@@ -100,14 +256,23 @@ void clear_screen(void) {
     cursor_row = 0;
     cursor_col = 0;
     update_cursor(cursor_row, cursor_col);
+    
+    backup_current_screen();
+    is_viewing_history = 0;
 }
 
-// print char
 void print_char(char c) {
     print_char_color(c, VGA_LIGHT_GREY, VGA_BLACK);
 }
 
 void print_char_color(char c, uint8_t fg, uint8_t bg) {
+    if (is_viewing_history) {
+        is_viewing_history = 0;
+        history_view_offset = 0;
+        restore_screen_from_backup();
+        update_cursor(cursor_row, cursor_col);
+    }
+    
     volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
     uint8_t old_color = vga_color;
     set_vga_color(fg, bg);
@@ -134,7 +299,6 @@ void print_char_color(char c, uint8_t fg, uint8_t bg) {
             vga[idx] = val;
             cursor_col++;
             break;            
-            
     }
 
     if (cursor_row >= VGA_HEIGHT) {
@@ -143,9 +307,10 @@ void print_char_color(char c, uint8_t fg, uint8_t bg) {
 
     vga_color = old_color;
     tty_color[tty_cur] = old_color;
+    
+    backup_current_screen();
 }
 
-// Print string
 void print_str(const char* str) {
     print_str_color(str, VGA_LIGHT_GREY, VGA_BLACK);
 }
@@ -156,7 +321,6 @@ void print_str_color(const char* str, uint8_t fg, uint8_t bg) {
     }
 }
 
-// Print 64-bit unsigned integers
 void print_uint64(uint64_t num) {
     print_uint64_color(num, VGA_LIGHT_GREY, VGA_BLACK);
 }
@@ -180,8 +344,6 @@ void print_uint64_color(uint64_t num, uint8_t fg, uint8_t bg) {
     }
 }
 
-
-// change terminal
 void vt_switch(int tty_num) {
     if (tty_num < 0 || tty_num >= TTY_COUNT || tty_num == tty_cur) {
         return;
@@ -198,9 +360,13 @@ void vt_switch(int tty_num) {
     vga_color = tty_color[tty_cur];
 
     vt_render_active();
+    backup_current_screen();
 }
 
 void update_cursor(uint8_t row, uint8_t col) {
+    if (row >= VGA_HEIGHT) row = VGA_HEIGHT - 1;
+    if (col >= VGA_WIDTH) col = VGA_WIDTH - 1;
+    
     uint16_t cursor_pos = (uint16_t)row * VGA_WIDTH + col;
 
     outb(VGA_CTRL_PORT, 0x0E);
@@ -453,4 +619,108 @@ int printk_color(uint8_t fg, uint8_t bg, const char *fmt, ...) {
 
     print_str_color(fmt_buf, fg, bg);
     return len;
+}
+
+void move_cursor_up(void) {
+    if (cursor_row > 0) {
+        cursor_row--;
+        update_cursor(cursor_row, cursor_col);
+    } else {
+        view_history_up();
+        cursor_row = 0;
+        update_cursor(cursor_row, cursor_col);
+    }
+}
+
+void move_cursor_down(void) {
+    if (cursor_row < VGA_HEIGHT - 1) {
+        cursor_row++;
+        update_cursor(cursor_row, cursor_col);
+    } else {
+        view_history_down();
+        cursor_row = VGA_HEIGHT - 1;
+        update_cursor(cursor_row, cursor_col);
+    }
+}
+
+void move_cursor_left(void) {
+    if (cursor_col > 0) {
+        cursor_col--;
+    } else if (cursor_row > 0) {
+        cursor_row--;
+        cursor_col = VGA_WIDTH - 1;
+    }
+    update_cursor(cursor_row, cursor_col);
+}
+
+void move_cursor_right(void) {
+    if (cursor_col < VGA_WIDTH - 1) {
+        cursor_col++;
+    } else if (cursor_row < VGA_HEIGHT - 1) {
+        cursor_row++;
+        cursor_col = 0;
+    }
+    update_cursor(cursor_row, cursor_col);
+}
+
+void scroll_up(void) {
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
+    
+    save_line_to_history(0);
+    
+    for (int row = 1; row < VGA_HEIGHT; row++) {
+        for (int col = 0; col < VGA_WIDTH; col++) {
+            uint32_t src_idx = vga_index(row, col);
+            uint32_t dst_idx = vga_index(row-1, col);
+            TBUF()[dst_idx] = TBUF()[src_idx];
+            vga[dst_idx] = TBUF()[dst_idx];
+        }
+    }
+    
+    uint16_t empty = (vga_color << 8) | ' ';
+    for (int col = 0; col < VGA_WIDTH; col++) {
+        uint32_t idx = vga_index(VGA_HEIGHT-1, col);
+        TBUF()[idx] = empty;
+        vga[idx] = empty;
+    }
+    
+    if (cursor_row == VGA_HEIGHT - 1) {
+        cursor_row--;
+    } else if (cursor_row > 0) {
+        cursor_row--;
+    }
+    
+    backup_current_screen();
+    update_cursor(cursor_row, cursor_col);
+}
+
+void scroll_down(void) {
+    volatile uint16_t* vga = (volatile uint16_t*)VGA_MEMORY;
+    
+    save_line_to_history(VGA_HEIGHT - 1);
+    
+    for (int row = VGA_HEIGHT - 2; row >= 0; row--) {
+        for (int col = 0; col < VGA_WIDTH; col++) {
+            uint32_t src_idx = vga_index(row, col);
+            uint32_t dst_idx = vga_index(row+1, col);
+            TBUF()[dst_idx] = TBUF()[src_idx];
+            vga[dst_idx] = TBUF()[dst_idx];
+        }
+    }
+    
+    uint16_t empty = (vga_color << 8) | ' ';
+    for (int col = 0; col < VGA_WIDTH; col++) {
+        uint32_t idx = vga_index(0, col);
+        TBUF()[idx] = empty;
+        vga[idx] = empty;
+    }
+    
+    if (cursor_row == 0) {
+        cursor_row++;
+    } else if (cursor_row < VGA_HEIGHT - 1) {
+        cursor_row++;
+    }
+    
+    backup_current_screen();
+    update_cursor(cursor_row, cursor_col);
 }
