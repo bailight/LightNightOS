@@ -8,9 +8,28 @@ static process_t g_procs[MAX_PROCESSES];
 static int       g_current = -1;
 static uint64_t  g_next_pid = 1;
 static unsigned long long g_last_switch_ticks = 0;
-static int      g_scheduler_started = 0;
+static int       g_scheduler_started = 0;
 
-extern void context_switch_asm(process_context_t **old, process_context_t *new);
+extern void context_switch_asm(process_context_t *old, process_context_t *new);
+
+// Обёртка для процесса: вызывает entry, затем process_exit
+static void process_wrapper(void) {
+    if (g_current < 0 || g_current >= MAX_PROCESSES) {
+        return;
+    }
+    
+    process_t *proc = &g_procs[g_current];
+    void (*entry)(void *) = (void (*)(void *))proc->context.rbx;  // entry сохранён в rbx
+    void *arg = (void *)proc->context.r12;  // arg сохранён в r12
+    
+    printk("[SCHED] Process %d starting: entry=0x%lx, arg=0x%lx\n", 
+           proc->pid, (unsigned long)entry, (unsigned long)arg);
+    
+    entry(arg);
+    
+    printk("[SCHED] Process %d finished, calling exit\n", proc->pid);
+    process_exit(0);
+}
 
 void idle_process(void *arg) {
     (void)arg;
@@ -24,21 +43,22 @@ void idle_process(void *arg) {
     }
 }
 
-void context_switch(process_context_t **old, process_context_t *new) {
-    printk("[SCHED] Switching context: old_ptr=0x%lx, old=0x%lx, new=0x%lx\n", 
-           (unsigned long)old, 
-           (unsigned long)(old ? *old : NULL),
-           (unsigned long)new);
-    context_switch_asm(old, new);
-}
-
 void scheduler_init(void) {
     for (int i = 0; i < MAX_PROCESSES; ++i) {
         g_procs[i].pid   = 0;
         g_procs[i].state = PROC_UNUSED;
-        g_procs[i].context = NULL;
         g_procs[i].stack = NULL;
         g_procs[i].stack_size = 0;
+        
+        // Обнуляем контекст
+        g_procs[i].context.rbx = 0;
+        g_procs[i].context.rbp = 0;
+        g_procs[i].context.r12 = 0;
+        g_procs[i].context.r13 = 0;
+        g_procs[i].context.r14 = 0;
+        g_procs[i].context.r15 = 0;
+        g_procs[i].context.rsp = 0;
+        g_procs[i].context. rip = 0;
     }
     g_current = -1;
     g_next_pid = 1;
@@ -57,49 +77,45 @@ static int alloc_slot(void) {
     return -1;
 }
 
-static void init_process_context(process_t *proc, void (*entry)(void *), void *arg) {
-    uint64_t stack_base = (uint64_t)proc->stack;
-    uint64_t stack_size = proc->stack_size;
-    
-    proc->context = (process_context_t*)(stack_base + stack_size - sizeof(process_context_t));
-    
-    uint64_t stack_top = stack_base + stack_size;
-    stack_top = stack_top & ~0xF;
-    
-    for (size_t i = 0; i < sizeof(process_context_t); i++) {
-        ((uint8_t*)proc->context)[i] = 0;
-    }
-    
-    proc->context->rip = (uint64_t)entry;
-    proc->context->cs = 0x08;
-    proc->context->rflags = 0x202;
-    proc->context->rsp = stack_top;
-    proc->context->ss = 0x10;
-}
-
 int process_create(void (*entry)(void *), void *arg) {
     int idx = alloc_slot();
     if (idx < 0) {
+        printk("[SCHED] ERROR: No free process slots\n");
         return -1;
     }
 
     void *stack = malloc(STACK_SIZE);
     if (!stack) {
+        printk("[SCHED] ERROR: Failed to allocate stack\n");
         return -1;
     }
 
-    g_procs[idx].pid   = g_next_pid++;
-    g_procs[idx].state = PROC_READY;
     g_procs[idx].stack = stack;
     g_procs[idx].stack_size = STACK_SIZE;
+    g_procs[idx].pid = g_next_pid++;
+    g_procs[idx]. state = PROC_READY;
 
-    init_process_context(&g_procs[idx], entry, arg);
+    // Настраиваем стек (выравнивание на 16 байт)
+    uint64_t stack_top = ((uint64_t)stack + STACK_SIZE) & ~0xFULL;
+    
+    // Сохраняем entry и arg в регистрах контекста
+    g_procs[idx].context.rbx = (uint64_t)entry;  // entry в rbx
+    g_procs[idx].context. r12 = (uint64_t)arg;    // arg в r12
+    g_procs[idx].context. rbp = 0;
+    g_procs[idx]. context.r13 = 0;
+    g_procs[idx].context.r14 = 0;
+    g_procs[idx].context.r15 = 0;
+    g_procs[idx].context. rsp = stack_top;
+    g_procs[idx]. context.rip = (uint64_t)process_wrapper;  // Точка входа - обёртка
+
+    printk("[SCHED] Created process PID=%d in slot %d, stack=0x%lx-0x%lx\n",
+           g_procs[idx].pid, idx, (unsigned long)stack, (unsigned long)stack_top);
 
     return idx;
 }
 
 void process_yield(void) {
-    if (!g_scheduler_started) {
+    if (! g_scheduler_started) {
         return;
     }
 
@@ -107,43 +123,37 @@ void process_yield(void) {
         return;
     }
 
-    uint64_t current_pid = g_procs[g_current].pid;
-    
+    // Переводим текущий процесс в READY (если он RUNNING)
     if (g_procs[g_current].state == PROC_RUNNING) {
         g_procs[g_current].state = PROC_READY;
     }
     
+    // Ищем следующий READY процесс (round-robin)
     int next = -1;
     int start = (g_current + 1) % MAX_PROCESSES;
     
     for (int i = 0; i < MAX_PROCESSES; i++) {
         int idx = (start + i) % MAX_PROCESSES;
-        if (g_procs[idx].state == PROC_READY && idx != g_current) {
+        if (g_procs[idx].state == PROC_READY) {
             next = idx;
             break;
         }
     }
 
-    if (next < 0) {
-        for (int i = 0; i < MAX_PROCESSES; i++) {
-            if (g_procs[i].state != PROC_UNUSED && i != g_current) {
-                next = i;
-                g_procs[next].state = PROC_READY;
-                break;
-            }
-        }
-    }
-
+    // Если не нашли - остаёмся на текущем
     if (next < 0 || next == g_current) {
         g_procs[g_current].state = PROC_RUNNING;
         return;
     }
 
     int old_current = g_current;
-    g_procs[next].state = PROC_RUNNING;
     g_current = next;
+    g_procs[next].state = PROC_RUNNING;
     
-    context_switch(&g_procs[old_current].context, g_procs[next].context);
+    printk("[SCHED] Switching: PID %d -> PID %d\n", 
+           g_procs[old_current]. pid, g_procs[next].pid);
+    
+    context_switch_asm(&g_procs[old_current].context, &g_procs[next].context);
 }
 
 void scheduler_tick(void) {
@@ -172,21 +182,23 @@ void scheduler_start(void) {
         return;
     }
     
-    printk("[SCHED] Starting scheduler...\n");
+    printk("[SCHED] Starting scheduler.. .\n");
     
+    // Проверяем наличие процессов
     int ready_count = 0;
     for (int i = 0; i < MAX_PROCESSES; ++i) {
         if (g_procs[i].state == PROC_READY) {
             ready_count++;
-            printk("[SCHED] Found process PID %d in slot %d (state=%d)\n", 
-                   g_procs[i].pid, i, g_procs[i].state);
+            printk("[SCHED] Found process PID %d in slot %d\n", g_procs[i].pid, i);
         }
     }
     
     if (ready_count == 0) {
+        printk("[SCHED] No processes ready, creating idle\n");
         process_create(idle_process, 0);
     }
     
+    // Находим первый процесс
     int first = -1;
     for (int i = 0; i < MAX_PROCESSES; ++i) {
         if (g_procs[i].state == PROC_READY) {
@@ -195,17 +207,23 @@ void scheduler_start(void) {
         }
     }
     
-    if (first >= 0) {
-        g_current = first;
-        g_procs[first].state = PROC_RUNNING;
-        g_scheduler_started = 1;
-        
-        printk("[SCHED] Starting with PID %d in slot %d\n", g_procs[first].pid, first);
-        printk("[SCHED] Switching to first process...\n");
-        
-        process_context_t *dummy = NULL;
-        context_switch(&dummy, g_procs[first].context);
+    if (first < 0) {
+        printk("[SCHED] ERROR: No processes to run!\n");
+        return;
     }
+
+    g_current = first;
+    g_procs[first]. state = PROC_RUNNING;
+    g_scheduler_started = 1;
+    
+    printk("[SCHED] Starting with PID %d\n", g_procs[first].pid);
+    printk("[SCHED] Jumping to first process.. .\n\n");
+    
+    // Первое переключение: old=NULL
+    context_switch_asm(NULL, &g_procs[first].context);
+    
+    // Сюда мы не должны вернуться
+    printk("[SCHED] ERROR: Returned from scheduler_start!\n");
 }
 
 void process_exit(int status) {
@@ -220,55 +238,50 @@ void process_exit(int status) {
     
     printk("[SCHED] Process %d exiting\n", exiting_pid);
     
+    // Освобождаем ресурсы
     if (proc->stack) {
         free(proc->stack);
     }
     
     proc->state = PROC_UNUSED;
     proc->pid = 0;
-    proc->context = NULL;
     proc->stack = NULL;
     proc->stack_size = 0;
     
+    // Ищем следующий процесс
     int next = -1;
     for (int i = 0; i < MAX_PROCESSES; ++i) {
-        if (g_procs[i].state == PROC_READY) {
+        if (g_procs[i]. state == PROC_READY) {
             next = i;
             break;
         }
     }
     
+    // Если нет процессов - создаём idle
     if (next < 0) {
-        for (int i = 0; i < MAX_PROCESSES; ++i) {
-            if (i != g_current && g_procs[i].state != PROC_UNUSED) {
-                next = i;
-                g_procs[next].state = PROC_READY;
-                break;
-            }
-        }
-    }
-    
-    if (next < 0) {
+        printk("[SCHED] No processes left, creating idle\n");
         next = process_create(idle_process, 0);
         if (next < 0) {
+            printk("[SCHED] FATAL: Cannot create idle process!\n");
             g_scheduler_started = 0;
             g_current = -1;
             return;
         }
     }
     
-    int old_current = g_current;
-    g_procs[next].state = PROC_RUNNING;
     g_current = next;
+    g_procs[next].state = PROC_RUNNING;
     
-    process_context_t *dummy = NULL;
-    context_switch(&dummy, g_procs[next].context);
+    printk("[SCHED] Switching to PID %d after exit\n", g_procs[next].pid);
+    
+    // Переключаемся без сохранения (old=NULL)
+    context_switch_asm(NULL, &g_procs[next].context);
 }
 
 int get_process_count(void) {
     int count = 0;
     for (int i = 0; i < MAX_PROCESSES; ++i) {
-        if (g_procs[i].state != PROC_UNUSED) {
+        if (g_procs[i]. state != PROC_UNUSED) {
             count++;
         }
     }
@@ -293,12 +306,11 @@ void debug_print_processes(void) {
     printk("[SCHED] Process table (current=%d):\n", g_current);
     for (int i = 0; i < MAX_PROCESSES; ++i) {
         if (g_procs[i].state != PROC_UNUSED) {
-            printk("  Slot %d: PID=%d, State=%d, Context=0x%lx, Stack=0x%lx\n",
-                   i, g_procs[i].pid, g_procs[i].state,
-                   (unsigned long)g_procs[i].context,
-                   (unsigned long)g_procs[i].stack);
-        } else {
-            printk("  Slot %d: UNUSED\n", i);
+            printk("  Slot %d: PID=%d, State=%d, Stack=0x%lx, RSP=0x%lx, RIP=0x%lx\n",
+                   i, g_procs[i].pid, g_procs[i]. state,
+                   (unsigned long)g_procs[i].stack,
+                   (unsigned long)g_procs[i].context. rsp,
+                   (unsigned long)g_procs[i].context.rip);
         }
     }
 }

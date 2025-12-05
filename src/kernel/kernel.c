@@ -130,7 +130,7 @@ void kernel_init() {
     print_str("Press SPACE to manually trigger yield\n");
     print_str("========================================\n");
 
-    sti();
+    __asm__ volatile ("sti");
     
     scheduler_start();
     

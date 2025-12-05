@@ -2,51 +2,41 @@ global context_switch_asm
 
 section .text
 
+; void context_switch_asm(process_context_t *old, process_context_t *new)
+; old может быть NULL при первом запуске
 context_switch_asm:
-    push    rbp
-    mov     rbp, rsp
-    
+    ; rdi = old context (может быть NULL)
+    ; rsi = new context (всегда валиден)
+
+    ; Сохраняем старый контекст (если есть)
     test    rdi, rdi
     jz      .load_new
-    mov     rax, [rdi]
-    test    rax, rax
-    jz      .load_new
+
+    ; Сохраняем callee-saved регистры
+    mov     [rdi + 0],  rbx
+    mov     [rdi + 8],  rbp
+    mov     [rdi + 16], r12
+    mov     [rdi + 24], r13
+    mov     [rdi + 32], r14
+    mov     [rdi + 40], r15
     
-    mov     [rax + 0], r15
-    mov     [rax + 8], r14
-    mov     [rax + 16], r13
-    mov     [rax + 24], r12
-    mov     [rax + 32], rbx
-    mov     [rax + 40], rbp
+    ; Сохраняем RSP (текущий стек)
+    mov     [rdi + 48], rsp
     
-    mov     rbx, [rbp + 8]
-    mov     [rax + 48], rbx
-    
-    lea     rbx, [rbp + 16]
-    mov     [rax + 72], rbx
-    
-    pushfq
-    pop     qword [rax + 64]
-    
-    mov     word [rax + 56], cs
-    mov     word [rax + 80], ss
+    ; Сохраняем адрес возврата (RIP)
+    mov     rax, [rsp]
+    mov     [rdi + 56], rax
 
 .load_new:
-    mov     rax, rsi
+    ; Загружаем новый контекст
+    mov     rbx, [rsi + 0]
+    mov     rbp, [rsi + 8]
+    mov     r12, [rsi + 16]
+    mov     r13, [rsi + 24]
+    mov     r14, [rsi + 32]
+    mov     r15, [rsi + 40]
+    mov     rsp, [rsi + 48]
     
-    mov     r15, [rax + 0]
-    mov     r14, [rax + 8]
-    mov     r13, [rax + 16]
-    mov     r12, [rax + 24]
-    mov     rbx, [rax + 32]
-    mov     rbp, [rax + 40]
-    
-    mov     rsp, [rax + 72]
-    
-    push    qword [rax + 80]
-    push    qword [rax + 72]
-    push    qword [rax + 64]
-    push    qword [rax + 56]
-    push    qword [rax + 48]
-    
-    iretq
+    ; Загружаем RIP и прыгаем туда
+    mov     rax, [rsi + 56]
+    jmp     rax

@@ -2,16 +2,21 @@
 #define SCHEDULER_H
 
 #include "../lib/stdint.h"
-#include "console.h"
-#include "timer.h"
 
 #define MAX_PROCESSES     8
-#define STACK_SIZE        (4096 * 2)
+#define STACK_SIZE        (4096 * 4)
 #define TIME_SLICE_TICKS  10
 
+// Упрощённый контекст: только callee-saved регистры + rsp + rip
 typedef struct {
-    uint64_t r15, r14, r13, r12, rbx, rbp;
-    uint64_t rip, cs, rflags, rsp, ss;
+    uint64_t rbx;
+    uint64_t rbp;
+    uint64_t r12;
+    uint64_t r13;
+    uint64_t r14;
+    uint64_t r15;
+    uint64_t rsp;
+    uint64_t rip;
 } __attribute__((packed)) process_context_t;
 
 typedef enum {
@@ -24,7 +29,7 @@ typedef enum {
 typedef struct {
     uint64_t            pid;
     proc_state_t        state;
-    process_context_t   *context;
+    process_context_t   context;
     void                *stack;
     uint64_t            stack_size;
 } process_t;
@@ -32,7 +37,6 @@ typedef struct {
 void scheduler_init(void);
 void scheduler_start(void);
 int process_create(void (*entry)(void *), void *arg);
-void context_switch(process_context_t **old, process_context_t *new);
 void process_yield(void);
 void scheduler_tick(void);
 uint64_t get_current_pid(void);
