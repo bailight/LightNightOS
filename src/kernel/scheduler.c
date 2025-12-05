@@ -22,12 +22,9 @@ static void process_wrapper(void) {
     void (*entry)(void *) = (void (*)(void *))proc->context.rbx;
     void *arg = (void *)proc->context.r12;
     
-    printk("[SCHED] Process %d starting: entry=0x%lx, arg=0x%lx\n", 
-           proc->pid, (unsigned long)entry, (unsigned long)arg);
-    
     entry(arg);
     
-    printk("[SCHED] Process %d finished, calling exit\n", proc->pid);
+    printk("[SCHED] Process %d finished\n", proc->pid);
     process_exit(0);
 }
 
@@ -37,7 +34,6 @@ void idle_process(void *arg) {
     printk("\n[IDLE] Idle process started (PID %d)\n", pid);
     
     while (1) {
-        // Просто ждём прерываний, не вызываем yield
         asm volatile("hlt");
     }
 }
@@ -51,12 +47,12 @@ void scheduler_init(void) {
         
         g_procs[i].context. rbx = 0;
         g_procs[i].context.rbp = 0;
-        g_procs[i].context. r12 = 0;
-        g_procs[i]. context.r13 = 0;
+        g_procs[i]. context.r12 = 0;
+        g_procs[i].context.r13 = 0;
         g_procs[i].context.r14 = 0;
-        g_procs[i].context.r15 = 0;
-        g_procs[i].context. rsp = 0;
-        g_procs[i].context. rip = 0;
+        g_procs[i].context. r15 = 0;
+        g_procs[i]. context.rsp = 0;
+        g_procs[i].context.rip = 0;
     }
     g_current = -1;
     g_next_pid = 1;
@@ -97,15 +93,14 @@ int process_create(void (*entry)(void *), void *arg) {
     
     g_procs[idx]. context.rbx = (uint64_t)entry;
     g_procs[idx].context. r12 = (uint64_t)arg;
-    g_procs[idx].context.rbp = 0;
+    g_procs[idx]. context.rbp = 0;
     g_procs[idx].context.r13 = 0;
     g_procs[idx].context.r14 = 0;
     g_procs[idx].context.r15 = 0;
     g_procs[idx].context.rsp = stack_top;
     g_procs[idx].context.rip = (uint64_t)process_wrapper;
 
-    printk("[SCHED] Created process PID=%d in slot %d, stack=0x%lx-0x%lx\n",
-           g_procs[idx].pid, idx, (unsigned long)stack, (unsigned long)stack_top);
+    printk("[SCHED] Created process PID=%d in slot %d\n", g_procs[idx].pid, idx);
 
     return idx;
 }
@@ -134,15 +129,13 @@ void process_yield(void) {
         }
     }
 
-    // Если не нашли других - остаёмся на текущем
     if (next < 0) {
         g_procs[g_current].state = PROC_RUNNING;
         return;
     }
     
-    // Если нашли только себя - не переключаемся
     if (next == g_current) {
-        g_procs[g_current].state = PROC_RUNNING;
+        g_procs[g_current]. state = PROC_RUNNING;
         return;
     }
 
@@ -150,24 +143,13 @@ void process_yield(void) {
     g_current = next;
     g_procs[next].state = PROC_RUNNING;
     
-    printk("[SCHED] Switching: PID %d -> PID %d\n", 
-           g_procs[old_current].pid, g_procs[next].pid);
-    
     context_switch_asm(&g_procs[old_current].context, &g_procs[next].context);
 }
 
 void scheduler_tick(void) {
-    if (!g_scheduler_started) {
-        return;
-    }
-
-    unsigned long long now = timer_ticks();
-    if (now - g_last_switch_ticks < TIME_SLICE_TICKS) {
-        return;
-    }
-    g_last_switch_ticks = now;
-
-    process_yield();
+    // ОТКЛЮЧЕНО: не вызываем из обработчика прерываний
+    // Это позволит клавиатуре работать нормально
+    return;
 }
 
 uint64_t get_current_pid(void) {
@@ -182,7 +164,7 @@ void scheduler_start(void) {
         return;
     }
     
-    printk("[SCHED] Starting scheduler...\n");
+    printk("[SCHED] Starting scheduler.. .\n");
     
     int ready_count = 0;
     for (int i = 0; i < MAX_PROCESSES; ++i) {
@@ -275,7 +257,7 @@ void process_exit(int status) {
 int get_process_count(void) {
     int count = 0;
     for (int i = 0; i < MAX_PROCESSES; ++i) {
-        if (g_procs[i].state != PROC_UNUSED) {
+        if (g_procs[i]. state != PROC_UNUSED) {
             count++;
         }
     }
@@ -299,7 +281,7 @@ proc_state_t get_process_state(int index) {
 void debug_print_processes(void) {
     printk("[SCHED] Process table (current=%d):\n", g_current);
     for (int i = 0; i < MAX_PROCESSES; ++i) {
-        if (g_procs[i].state != PROC_UNUSED) {
+        if (g_procs[i]. state != PROC_UNUSED) {
             printk("  Slot %d: PID=%d, State=%d, Stack=0x%lx, RSP=0x%lx, RIP=0x%lx\n",
                    i, g_procs[i].pid, g_procs[i]. state,
                    (unsigned long)g_procs[i].stack,

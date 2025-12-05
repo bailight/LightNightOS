@@ -17,46 +17,61 @@ static int compute_factorial(int n) {
 static void process_A(void *arg) {
     (void)arg;
     uint64_t pid = get_current_pid();
-    printk("\n[PID %d] Process A STARTED\n", pid);
+    printk("[PID %d] Process A started\n", pid);
     
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 3; i++) {
         printk("[PID %d] A: iteration %d\n", pid, i);
         
         void *ptr = malloc(64);
         if (ptr) {
-            printk("[PID %d] A: malloc OK at 0x%lx\n", pid, (unsigned long)ptr);
+            printk("[PID %d] A: malloc OK\n", pid);
             free(ptr);
         }
         
-        for (volatile int d = 0; d < 100000; d++);
+        for (volatile int d = 0; d < 1000000; d++);
         
-        printk("[PID %d] A: calling yield\n", pid);
         process_yield();
     }
     
-    printk("[PID %d] Process A FINISHED\n", pid);
+    printk("[PID %d] Process A finished\n", pid);
     process_exit(0);
 }
 
 static void process_B(void *arg) {
     (void)arg;
     uint64_t pid = get_current_pid();
-    printk("\n[PID %d] Process B STARTED\n", pid);
+    printk("[PID %d] Process B started\n", pid);
     
-    for (int i = 0; i < 5; i++) {
-        printk("[PID %d] B: iteration %d\n", pid, i);
-        
+    for (int i = 0; i < 3; i++) {
         int fact = compute_factorial(i + 1);
         printk("[PID %d] B: factorial(%d) = %d\n", pid, i + 1, fact);
         
-        for (volatile int d = 0; d < 100000; d++);
+        for (volatile int d = 0; d < 1000000; d++);
         
-        printk("[PID %d] B: calling yield\n", pid);
         process_yield();
     }
     
-    printk("[PID %d] Process B FINISHED\n", pid);
+    printk("[PID %d] Process B finished\n", pid);
     process_exit(0);
+}
+
+static void process_infinite(void *arg) {
+    (void)arg;
+    uint64_t pid = get_current_pid();
+    printk("[PID %d] Background process started\n", pid);
+    
+    int counter = 0;
+    while (1) {
+        counter++;
+        
+        if (counter % 1000 == 0) {
+            printk("[PID %d] Heartbeat: %d\n", pid, counter);
+        }
+        
+        for (volatile int d = 0; d < 100000; d++);
+        
+        process_yield();
+    }
 }
 
 static void test_malloc_demo(void) {
@@ -68,7 +83,7 @@ static void test_malloc_demo(void) {
     printk("[TEST] malloc(64) -> 0x%016lx\n", (unsigned long)p1);
     printk("[TEST] malloc(128) -> 0x%016lx\n", (unsigned long)p2);
 
-    if (!p1 || !p2) {
+    if (! p1 || !p2) {
         print_str("[TEST] malloc FAILED\n");
         return;
     }
@@ -86,14 +101,6 @@ static void debug_scheduler_info(void) {
     printk("[SCHED] Active processes: %d\n", count);
     
     debug_print_processes();
-    
-    for (int i = 0; i < MAX_PROCESSES; i++) {
-        proc_state_t state = get_process_state(i);
-        if (state != PROC_UNUSED) {
-            uint64_t pid = get_process_pid(i);
-            printk("[SCHED] Slot %d: PID=%d, State=%d\n", i, pid, state);
-        }
-    }
 }
 
 void kernel_init() {
@@ -112,10 +119,6 @@ void kernel_init() {
     
     scheduler_init();
     
-    print_str("\nCreating idle process...\n");
-    int idle_slot = process_create(idle_process, 0);
-    printk("Created idle process in slot %d\n", idle_slot);
-    
     print_str("\nCreating test processes...\n");
     
     int pid1 = process_create(process_A, 0);
@@ -124,16 +127,22 @@ void kernel_init() {
     int pid2 = process_create(process_B, 0);
     printk("Created process B in slot %d\n", pid2);
     
+    int pid3 = process_create(process_infinite, 0);
+    printk("Created background process in slot %d\n", pid3);
+    
     debug_scheduler_info();
     
-    print_str("\nStarting scheduler...\n");
-    print_str("Press SPACE to manually trigger yield\n");
-    print_str("========================================\n");
+    print_str("\n========================================\n");
+    print_str("Starting scheduler...\n");
+    print_str("Processes will run cooperatively (manual yield)\n");
+    print_str("You can still use keyboard and scroll!\n");
+    print_str("========================================\n\n");
 
     __asm__ volatile ("sti");
     
     scheduler_start();
     
+    // Сюда мы не должны попасть
     while (1) {
         asm volatile("hlt");
     }
