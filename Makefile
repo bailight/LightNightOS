@@ -3,8 +3,10 @@ CC := gcc
 LD := ld
 NASM := nasm
 
-CFLAGS := -m64 -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone -mcmodel=kernel -O2 -Wall -Wextra
+CFLAGS := -m64 -ffreestanding -fno-stack-protector -fno-pic -mno-red-zone \
+          -mcmodel=kernel -O2 -Wall -Wextra -I./src
 LDFLAGS := -nostdlib -z max-page-size=0x1000
+NASMFLAGS := -f elf64
 
 BUILD := ./build
 SRC := ./src
@@ -25,19 +27,24 @@ $(BUILD)/boot/mbr.bin: $(BOOT_DIR)/mbr.asm | build
 $(BUILD)/boot/boot.bin: $(BOOT_DIR)/boot.asm | build
 	$(NASM) -f bin $< -o $@
 
-$(BUILD)/kernel/kmain64.o: $(KERNEL_DIR)/kmain64.asm | build
-	$(NASM) -f elf64 $< -o $@
+# Ассемблерные файлы ядра
+KERNEL_ASM_SRCS := $(KERNEL_DIR)/kmain64.asm \
+                   $(KERNEL_DIR)/isr.asm \
+                   $(KERNEL_DIR)/context_switch.asm
 
-$(BUILD)/kernel/isr.o: $(KERNEL_DIR)/isr.asm | build
-	$(NASM) -f elf64 $< -o $@
+KERNEL_ASM_OBJS := $(KERNEL_ASM_SRCS:$(KERNEL_DIR)/%.asm=$(BUILD)/kernel/%.o)
 
+$(BUILD)/kernel/%.o: $(KERNEL_DIR)/%.asm | build
+	$(NASM) $(NASMFLAGS) $< -o $@
+
+# C файлы ядра
 KERNEL_C_SRCS := $(KERNEL_DIR)/kernel.c \
                  $(KERNEL_DIR)/memory.c \
                  $(KERNEL_DIR)/console.c \
                  $(KERNEL_DIR)/keyboard.c \
                  $(KERNEL_DIR)/interrupt.c \
-                 $(KERNEL_DIR)/timer.c \
                  $(KERNEL_DIR)/interrupts.c \
+                 $(KERNEL_DIR)/timer.c \
                  $(KERNEL_DIR)/scheduler.c
 
 KERNEL_C_OBJS := $(KERNEL_C_SRCS:$(KERNEL_DIR)/%.c=$(BUILD)/kernel/%.o)
@@ -45,8 +52,8 @@ KERNEL_C_OBJS := $(KERNEL_C_SRCS:$(KERNEL_DIR)/%.c=$(BUILD)/kernel/%.o)
 $(BUILD)/kernel/%.o: $(KERNEL_DIR)/%.c | build
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/kernel/kernel.elf: $(BUILD)/kernel/kmain64.o $(BUILD)/kernel/isr.o $(KERNEL_C_OBJS) $(KERNEL_DIR)/linker.ld | build
-	$(LD) $(LDFLAGS) -T $(KERNEL_DIR)/linker.ld -o $@ $(BUILD)/kernel/kmain64.o $(BUILD)/kernel/isr.o $(KERNEL_C_OBJS)
+$(BUILD)/kernel/kernel.elf: $(KERNEL_ASM_OBJS) $(KERNEL_C_OBJS) $(KERNEL_DIR)/linker.ld | build
+	$(LD) $(LDFLAGS) -T $(KERNEL_DIR)/linker.ld -o $@ $(KERNEL_ASM_OBJS) $(KERNEL_C_OBJS)
 
 $(BUILD)/kernel/kernel.bin: $(BUILD)/kernel/kernel.elf | build
 	objcopy -O binary $< $@
@@ -63,3 +70,4 @@ run: img/disk.img
 clean:
 	rm -rf $(BUILD) img/disk.img
 
+.PHONY: all build run clean
