@@ -2,13 +2,11 @@
 #include "kernel.h"
 #include "console.h"
 #include "scheduler.h"
-#include "interrupts.h"   // struct regs_t
+#include "interrupts.h"
 
 #define PIT_CHANNEL0   0x40
 #define PIT_COMMAND    0x43
 #define PIT_FREQUENCY  1193182
-
-#define PIC_MASTER_CMD 0x20
 
 static volatile unsigned long long g_ticks = 0;
 
@@ -35,11 +33,7 @@ void timer_handler_c(struct regs_t *regs) {
 
     g_ticks++;
 
-    // for test
-    // if (g_ticks % 100 == 0) {
-    //     print_str_color(".", VGA_LIGHT_GREY, VGA_BLACK);
-    // }
+    scheduler_tick();
 
-    outb(PIC_MASTER_CMD, 0x20);   // EOI
+    outb(0x20, 0x20);
 }
-
