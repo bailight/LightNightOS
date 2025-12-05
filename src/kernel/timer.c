@@ -33,13 +33,7 @@ void timer_handler_c(struct regs_t *regs) {
 
     g_ticks++;
 
-    // Отладочный вывод каждую секунду (при frequency=100)
-    if (g_ticks % 100 == 0) {
-        print_str_color(".", VGA_LIGHT_GREY, VGA_BLACK);
-    }
-
-    // Вызываем планировщик
     scheduler_tick();
 
-    outb(0x20, 0x20);   // EOI для мастер-контроллера PIC
+    outb(0x20, 0x20);
 }

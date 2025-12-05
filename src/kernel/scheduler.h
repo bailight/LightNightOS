@@ -10,8 +10,7 @@
 #define TIME_SLICE_TICKS  10
 
 typedef struct {
-    uint64_t r15, r14, r13, r12, r11, r10, r9, r8;
-    uint64_t rdi, rsi, rbp, rbx, rdx, rcx, rax;
+    uint64_t r15, r14, r13, r12, rbx, rbp;
     uint64_t rip, cs, rflags, rsp, ss;
 } __attribute__((packed)) process_context_t;
 
@@ -42,5 +41,7 @@ int get_process_count(void);
 uint64_t get_process_pid(int index);
 proc_state_t get_process_state(int index);
 void debug_print_processes(void);
+
+void idle_process(void *arg);
 
 #endif

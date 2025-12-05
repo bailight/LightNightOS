@@ -130,12 +130,10 @@ void kernel_init() {
     print_str("Press SPACE to manually trigger yield\n");
     print_str("========================================\n");
 
-    vt_render_active();
     sti();
     
     scheduler_start();
     
-    print_str("\n[KERNEL] ERROR: Returned to kernel_init after scheduler_start!\n");
     while (1) {
         asm volatile("hlt");
     }

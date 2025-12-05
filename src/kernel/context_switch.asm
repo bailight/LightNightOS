@@ -3,69 +3,50 @@ global context_switch_asm
 section .text
 
 context_switch_asm:
-    cmp     rdi, 0
-    je      .load_new_context
+    push    rbp
+    mov     rbp, rsp
     
+    test    rdi, rdi
+    jz      .load_new
     mov     rax, [rdi]
+    test    rax, rax
+    jz      .load_new
     
     mov     [rax + 0], r15
     mov     [rax + 8], r14
     mov     [rax + 16], r13
     mov     [rax + 24], r12
-    mov     [rax + 32], r11
-    mov     [rax + 40], r10
-    mov     [rax + 48], r9
-    mov     [rax + 56], r8
-    mov     [rax + 64], rdi
-    mov     [rax + 72], rsi
-    mov     [rax + 80], rbp
-    mov     [rax + 88], rbx
-    mov     [rax + 96], rdx
-    mov     [rax + 104], rcx
-    mov     [rax + 112], rax
+    mov     [rax + 32], rbx
+    mov     [rax + 40], rbp
     
-    mov     rbx, [rsp]
-    mov     [rax + 152], rbx
+    mov     rbx, [rbp + 8]
+    mov     [rax + 48], rbx
+    
+    lea     rbx, [rbp + 16]
+    mov     [rax + 72], rbx
     
     pushfq
-    pop     qword [rax + 168]
+    pop     qword [rax + 64]
     
-    mov     [rax + 176], rsp
-    
-    mov     word [rax + 160], 0x08
-    mov     word [rax + 184], 0x10
+    mov     word [rax + 56], cs
+    mov     word [rax + 80], ss
 
-.load_new_context:
+.load_new:
     mov     rax, rsi
     
     mov     r15, [rax + 0]
     mov     r14, [rax + 8]
     mov     r13, [rax + 16]
     mov     r12, [rax + 24]
-    mov     r11, [rax + 32]
-    mov     r10, [rax + 40]
-    mov     r9,  [rax + 48]
-    mov     r8,  [rax + 56]
-    mov     rdi, [rax + 64]
+    mov     rbx, [rax + 32]
+    mov     rbp, [rax + 40]
     
-    mov     rbx, [rax + 88]
-    push    rbx
+    mov     rsp, [rax + 72]
     
-    mov     rdx, [rax + 96]
-    mov     rcx, [rax + 104]
-    
-    mov     rsp, [rax + 176]
-    
-    push    qword [rax + 184]
-    push    qword rsp
-    push    qword [rax + 168]
-    push    qword [rax + 160]
-    push    qword [rax + 152]
-    
-    mov     rsi, [rax + 72]
-    mov     rbp, [rax + 80]
-    mov     rax, [rax + 112]
-    
-    pop     rbx
+    push    qword [rax + 80]
+    push    qword [rax + 72]
+    push    qword [rax + 64]
+    push    qword [rax + 56]
+    push    qword [rax + 48]
     
     iretq

@@ -12,7 +12,7 @@ static int      g_scheduler_started = 0;
 
 extern void context_switch_asm(process_context_t **old, process_context_t *new);
 
-static void idle_process(void *arg) {
+void idle_process(void *arg) {
     (void)arg;
     uint64_t pid = get_current_pid();
     printk("\n[IDLE] Idle process started (PID %d)\n", pid);
@@ -30,7 +30,6 @@ void context_switch(process_context_t **old, process_context_t *new) {
            (unsigned long)(old ? *old : NULL),
            (unsigned long)new);
     context_switch_asm(old, new);
-    printk("[SCHED] Returned from context switch to PID %d\n", get_current_pid());
 }
 
 void scheduler_init(void) {
@@ -67,30 +66,25 @@ static void init_process_context(process_t *proc, void (*entry)(void *), void *a
     uint64_t stack_top = stack_base + stack_size;
     stack_top = stack_top & ~0xF;
     
-    memset(proc->context, 0, sizeof(process_context_t));
+    for (size_t i = 0; i < sizeof(process_context_t); i++) {
+        ((uint8_t*)proc->context)[i] = 0;
+    }
     
     proc->context->rip = (uint64_t)entry;
     proc->context->cs = 0x08;
     proc->context->rflags = 0x202;
     proc->context->rsp = stack_top;
     proc->context->ss = 0x10;
-    proc->context->rdi = (uint64_t)arg;
-    
-    printk("[SCHED] Context init: entry=0x%lx, rsp=0x%lx, arg=0x%lx, ctx=0x%lx\n", 
-           (unsigned long)entry, (unsigned long)stack_top, 
-           (unsigned long)arg, (unsigned long)proc->context);
 }
 
 int process_create(void (*entry)(void *), void *arg) {
     int idx = alloc_slot();
     if (idx < 0) {
-        printk("[SCHED] Error: no free slots\n");
         return -1;
     }
 
     void *stack = malloc(STACK_SIZE);
     if (!stack) {
-        printk("[SCHED] Error: failed to allocate stack\n");
         return -1;
     }
 
@@ -101,23 +95,19 @@ int process_create(void (*entry)(void *), void *arg) {
 
     init_process_context(&g_procs[idx], entry, arg);
 
-    printk("[SCHED] Created process PID %d in slot %d\n", g_procs[idx].pid, idx);
     return idx;
 }
 
 void process_yield(void) {
     if (!g_scheduler_started) {
-        printk("[SCHED] Yield: scheduler not ready\n");
         return;
     }
 
     if (g_current < 0) {
-        printk("[SCHED] Yield: no current process\n");
         return;
     }
 
     uint64_t current_pid = g_procs[g_current].pid;
-    printk("[SCHED] Yield called from PID %d\n", current_pid);
     
     if (g_procs[g_current].state == PROC_RUNNING) {
         g_procs[g_current].state = PROC_READY;
@@ -145,21 +135,15 @@ void process_yield(void) {
     }
 
     if (next < 0 || next == g_current) {
-        printk("[SCHED] No other process found, staying with PID %d\n", current_pid);
         g_procs[g_current].state = PROC_RUNNING;
         return;
     }
 
-    printk("[SCHED] Switching from PID %d (slot %d) to PID %d (slot %d)\n", 
-           current_pid, g_current, g_procs[next].pid, next);
-    
     int old_current = g_current;
     g_procs[next].state = PROC_RUNNING;
     g_current = next;
     
     context_switch(&g_procs[old_current].context, g_procs[next].context);
-    
-    printk("[SCHED] Resumed execution of PID %d\n", g_procs[g_current].pid);
 }
 
 void scheduler_tick(void) {
@@ -173,7 +157,6 @@ void scheduler_tick(void) {
     }
     g_last_switch_ticks = now;
 
-    printk("[SCHED] Timer tick at %llu, forcing yield\n", now);
     process_yield();
 }
 
@@ -186,7 +169,6 @@ uint64_t get_current_pid(void) {
 
 void scheduler_start(void) {
     if (g_scheduler_started) {
-        printk("[SCHED] Already started\n");
         return;
     }
     
@@ -202,7 +184,6 @@ void scheduler_start(void) {
     }
     
     if (ready_count == 0) {
-        printk("[SCHED] No ready processes, creating idle process\n");
         process_create(idle_process, 0);
     }
     
@@ -224,18 +205,6 @@ void scheduler_start(void) {
         
         process_context_t *dummy = NULL;
         context_switch(&dummy, g_procs[first].context);
-        
-        printk("[SCHED] ERROR: Returned to scheduler_start after context switch!\n");
-    } else {
-        printk("[SCHED] ERROR: No process to start!\n");
-        int idle_slot = process_create(idle_process, 0);
-        if (idle_slot >= 0) {
-            g_current = idle_slot;
-            g_procs[idle_slot].state = PROC_RUNNING;
-            g_scheduler_started = 1;
-            process_context_t *dummy = NULL;
-            context_switch(&dummy, g_procs[idle_slot].context);
-        }
     }
 }
 
@@ -243,7 +212,6 @@ void process_exit(int status) {
     (void)status;
     
     if (g_current < 0) {
-        printk("[SCHED] Exit: no current process\n");
         return;
     }
 
@@ -281,10 +249,8 @@ void process_exit(int status) {
     }
     
     if (next < 0) {
-        printk("[SCHED] No processes left, creating idle\n");
         next = process_create(idle_process, 0);
         if (next < 0) {
-            printk("[SCHED] FATAL: Cannot create idle process\n");
             g_scheduler_started = 0;
             g_current = -1;
             return;
@@ -295,17 +261,8 @@ void process_exit(int status) {
     g_procs[next].state = PROC_RUNNING;
     g_current = next;
     
-    printk("[SCHED] Process %d exited, switching to PID %d\n", 
-           exiting_pid, g_procs[next].pid);
-    
-    if (g_procs[old_current].state == PROC_UNUSED) {
-        process_context_t *dummy = NULL;
-        context_switch(&dummy, g_procs[next].context);
-    } else {
-        context_switch(&g_procs[old_current].context, g_procs[next].context);
-    }
-    
-    printk("[SCHED] ERROR: Returned to process_exit after switch!\n");
+    process_context_t *dummy = NULL;
+    context_switch(&dummy, g_procs[next].context);
 }
 
 int get_process_count(void) {
