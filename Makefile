@@ -18,6 +18,7 @@ all: run
 
 build:
 	mkdir -p $(BUILD)/boot
+	mkdir -p $(BUILD)/kernel/fs
 	mkdir -p $(BUILD)/kernel
 	mkdir -p img
 
@@ -45,7 +46,11 @@ KERNEL_C_SRCS := $(KERNEL_DIR)/kernel.c \
                  $(KERNEL_DIR)/interrupt.c \
                  $(KERNEL_DIR)/interrupts.c \
                  $(KERNEL_DIR)/timer.c \
-                 $(KERNEL_DIR)/scheduler.c
+                 $(KERNEL_DIR)/scheduler.c \
+                 $(KERNEL_DIR)/fs/fs.c \
+                 $(KERNEL_DIR)/fs/inode.c \
+                 $(KERNEL_DIR)/fs/block.c \
+                 $(KERNEL_DIR)/fs/dir.c
 
 KERNEL_C_OBJS := $(KERNEL_C_SRCS:$(KERNEL_DIR)/%.c=$(BUILD)/kernel/%.o)
 

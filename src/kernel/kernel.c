@@ -6,6 +6,10 @@
 #include "timer.h"
 #include "interrupts.h"
 #include "scheduler.h"
+#include "fs/fs.h"
+#include "fs/inode.h"
+#include "fs/block.h"
+#include "fs/dir.h"
 
 struct Global_Memory_Descriptor memory_management_struct = {0};
 
@@ -103,6 +107,80 @@ static void debug_scheduler_info(void) {
     debug_print_processes();
 }
 
+static void init_filesystem() {
+    fs_init();
+    inode_cache_init();
+    block_cache_init();
+    
+    printk("[TEST] Creating file.. .\n");
+    int32_t file_inode = fs_create_file("test.txt");
+    printk("[TEST] File created with inode: %d\n", file_inode);
+    
+    printk("[TEST] About to open file for writing...\n");
+    uint32_t fd = fs_open("test.txt", FS_MODE_WRITE);
+    printk("[TEST] fs_open returned fd: %d\n", fd);
+
+    if (fd >= 0) {
+        printk("[TEST] About to write to file...\n");
+        int32_t bytes_written = fs_write(fd, "Hello FS!", 9);
+        printk("[TEST] fs_write returned: %d\n", bytes_written);
+        
+        printk("[TEST] About to close file...\n");
+        fs_close(fd);
+        printk("[TEST] File closed\n");
+    } else {
+        printk("[TEST] ERROR: fs_open failed for writing\n");
+    }
+
+    // Create directory AFTER file operations
+    printk("[TEST] Creating directory...\n");
+    fs_create_dir("mydir");
+
+    printk("[TEST] About to open file for reading...\n");
+    uint32_t fd_read = fs_open("test.txt", FS_MODE_READ);
+    printk("[TEST] fs_open for reading returned fd: %d\n", fd_read);
+
+    if (fd_read >= 0) {
+        printk("[TEST] Inside if block\n");
+        char buffer[16];
+        printk("[TEST] Buffer declared\n");
+        buffer[0] = 0;
+        printk("[TEST] Buffer initialized\n");
+        int32_t bytes_read = 0;
+        printk("[TEST] bytes_read initialized\n");
+        printk("[TEST] About to call fs_read.. .\n");
+        bytes_read = fs_read(fd_read, buffer, 9);
+        printk("[TEST] fs_read returned: %d\n", bytes_read);
+        
+        printk("[TEST] File contents:  ");
+        for (int i = 0; i < bytes_read; i++) {
+            printk("%c", buffer[i]);
+        }
+        printk("\n");
+
+        // Also display as string
+        printk("[TEST] As string: %s\n", buffer);
+
+        // Also print it in hex to debug
+        printk("[TEST] File contents (hex): ");
+        for (int i = 0; i < bytes_read; i++) {
+            printk("%02x ", (uint8_t)buffer[i]);
+        }
+        printk("\n");
+
+        // Print as string
+        printk("[TEST] File contents (string): %s\n", buffer);
+        
+        printk("[TEST] About to close file...\n");
+        fs_close(fd_read);
+        printk("[TEST] File closed after reading\n");
+    } else {
+        printk("[TEST] ERROR: fs_open failed for reading\n");
+    }
+
+    printk("[TEST] All file operations complete!\n");
+}
+
 void kernel_init() {
     idt_init();
     console_init();
@@ -115,6 +193,9 @@ void kernel_init() {
     print_str("========================================\n\n");
     
     init_memory();
+
+    init_filesystem();
+    
     test_malloc_demo();
     
     scheduler_init();
@@ -127,8 +208,8 @@ void kernel_init() {
     int pid2 = process_create(process_B, 0);
     printk("Created process B in slot %d\n", pid2);
     
-    int pid3 = process_create(process_infinite, 0);
-    printk("Created background process in slot %d\n", pid3);
+    //int pid3 = process_create(process_infinite, 0);
+    //printk("Created background process in slot %d\n", pid3);
     
     debug_scheduler_info();
     
