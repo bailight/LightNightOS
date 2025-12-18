@@ -451,5 +451,5 @@ void init_memory() {
     
     init_page();
     
-    memory_test();
+    // memory_test();
 }

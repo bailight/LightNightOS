@@ -39,25 +39,25 @@ void idle_process(void *arg) {
 }
 
 void scheduler_init(void) {
-    for (int i = 0; i < MAX_PROCESSES; ++i) {
-        g_procs[i].pid   = 0;
-        g_procs[i].state = PROC_UNUSED;
-        g_procs[i].stack = NULL;
-        g_procs[i].stack_size = 0;
+    // for (int i = 0; i < MAX_PROCESSES; ++i) {
+    //     g_procs[i].pid = 0;
+    //     g_procs[i].state = PROC_UNUSED;
+    //     g_procs[i].stack = NULL;
+    //     g_procs[i].stack_size = 0;
         
-        g_procs[i].context. rbx = 0;
-        g_procs[i].context.rbp = 0;
-        g_procs[i]. context.r12 = 0;
-        g_procs[i].context.r13 = 0;
-        g_procs[i].context.r14 = 0;
-        g_procs[i].context. r15 = 0;
-        g_procs[i]. context.rsp = 0;
-        g_procs[i].context.rip = 0;
-    }
-    g_current = -1;
-    g_next_pid = 1;
-    g_last_switch_ticks = timer_ticks();
-    g_scheduler_started = 0;
+    //     g_procs[i].context.rbx = 0;
+    //     g_procs[i].context.rbp = 0;
+    //     g_procs[i].context.r12 = 0;
+    //     g_procs[i].context.r13 = 0;
+    //     g_procs[i].context.r14 = 0;
+    //     g_procs[i].context.r15 = 0;
+    //     g_procs[i].context.rsp = 0;
+    //     g_procs[i].context.rip = 0;
+    // }
+    // g_current = -1;
+    // g_next_pid = 1;
+    // g_last_switch_ticks = timer_ticks();
+    // g_scheduler_started = 0;
     
     printk("[SCHED] Scheduler initialized\n");
 }

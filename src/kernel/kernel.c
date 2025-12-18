@@ -10,6 +10,7 @@
 #include "fs/inode.h"
 #include "fs/block.h"
 #include "fs/dir.h"
+#include "shell.h"
 
 struct Global_Memory_Descriptor memory_management_struct = {0};
 
@@ -196,33 +197,36 @@ void kernel_init() {
 
     init_filesystem();
     
-    test_malloc_demo();
+    // test_malloc_demo();
     
     scheduler_init();
     
-    print_str("\nCreating test processes...\n");
     
-    int pid1 = process_create(process_A, 0);
-    printk("Created process A in slot %d\n", pid1);
+    // print_str("\nCreating test processes...\n");
     
-    int pid2 = process_create(process_B, 0);
-    printk("Created process B in slot %d\n", pid2);
+    // int pid1 = process_create(process_A, 0);
+    // printk("Created process A in slot %d\n", pid1);
     
-    //int pid3 = process_create(process_infinite, 0);
-    //printk("Created background process in slot %d\n", pid3);
+    // int pid2 = process_create(process_B, 0);
+    // printk("Created process B in slot %d\n", pid2);
     
-    debug_scheduler_info();
+    //// int pid3 = process_create(process_infinite, 0);
+    //// printk("Created background process in slot %d\n", pid3);
     
-    print_str("\n========================================\n");
-    print_str("Starting scheduler...\n");
-    print_str("Processes will run cooperatively (manual yield)\n");
-    print_str("You can still use keyboard and scroll!\n");
-    print_str("========================================\n\n");
+    // debug_scheduler_info();
+    
+    // print_str("\n========================================\n");
+    // print_str("Starting scheduler...\n");
+    // print_str("Processes will run cooperatively (manual yield)\n");
+    // print_str("You can still use keyboard and scroll!\n");
+    // print_str("========================================\n\n");
 
     __asm__ volatile ("sti");
+
+    shell_init();
     
     scheduler_start();
-    
+
     // Сюда мы не должны попасть
     while (1) {
         asm volatile("hlt");

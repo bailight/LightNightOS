@@ -102,20 +102,34 @@ inline int strlen(const char *String)
     return i;
 }
 
-inline char * str_copy(char *Dest, char *Src)
-{
-	__asm__ __volatile__ (	
-		"cld	\n\t"
-		"1:	\n\t"
-		"lodsb	\n\t"
-		"stosb	\n\t"
-		"testb	%%al,	%%al	\n\t"
-		"jne	1b	\n\t"
-		:
-		:"S"(Src),"D"(Dest)
-		:
-	);
-	return Dest;
+inline int strcmp(const char *s1, const char *s2) {
+    while (*s1 && (*s1 == *s2)) {
+        s1++;
+        s2++;
+    }
+    return *(unsigned char *)s1 - *(unsigned char *)s2;
+}
+
+inline char * strncpy(char *dest, const char *src, int n) {
+    char *d = dest;
+    
+    while (n > 0 && *src != '\0') {
+        *d++ = *src++;
+        n--;
+    }
+    
+    while (n > 0) {
+        *d++ = '\0';
+        n--;
+    }
+    
+    return dest;
+}
+
+inline char * str_copy(char *dest, const char *src) {
+    char *d = dest;
+    while ((*d++ = *src++)) ;
+    return dest;
 }
 
 #endif

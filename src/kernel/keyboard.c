@@ -1,6 +1,7 @@
 #include "keyboard.h"
 #include "console.h"
 #include "kernel.h"
+#include "shell.h"
 #include "../lib/stdint.h"
 
 #define PS2_DATA    0x60
@@ -43,41 +44,73 @@ void keyboard_handler_c(void) {
             continue;
         }
 
-        // Process function keys F1~F4
+        // Process function keys F1~F4 (always work)
         if (scancode >= 0x3B && scancode <= 0x3E) {
             vt_switch(scancode - 0x3B);
             continue;
         }
 
-        // Handle the backspace key
-        if (scancode == 0x0E) {
-            uint8_t col = get_cursor_col();
-            if (col > 0) {
-                set_cursor_col(col - 1);
-                print_char(' ');
-                set_cursor_col(col - 1);
+        if (shell_is_active()) {
+            switch(scancode) {
+            case 0x48:
+                shell_process_input(0x01);
+                break;
+            case 0x50:
+                shell_process_input(0x02);
+                break;
+            case 0x4B:
+                shell_process_input(0x03);
+                break;
+            case 0x4D:
+                shell_process_input(0x04);
+                break;
+            case 0x47:  // Home
+                shell_process_input(0x05);
+                break;
+            case 0x4F:  // End
+                shell_process_input(0x06);
+                break;
+            case 0x53:  // Delete
+                shell_process_input(0x07); 
+                break;
+            default:
+                char c = scancode_to_char(scancode);
+                if (c != 0) {
+                    shell_process_input(c);
+                }
+                break;
             }
         } else {
-            // Scan code to character and print
-            char c = scancode_to_char(scancode);
-            if (c != 0) {
-                print_char(c);
+            // Handle the backspace key
+            if (scancode == 0x0E) {
+                uint8_t col = get_cursor_col();
+                if (col > 0) {
+                    set_cursor_col(col - 1);
+                    print_char(' ');
+                    set_cursor_col(col - 1);
+                }
+            } else {
+                // Scan code to character and print
+                char c = scancode_to_char(scancode);
+                if (c != 0) {
+                    print_char(c);
+                }
             }
-        }
 
-        switch(scancode) {
-        case 0x48:
-            move_cursor_up();
-            break;
-        case 0x50:
-            move_cursor_down();
-            break;
-        case 0x4B:
-            move_cursor_left();
-            break;
-        case 0x4D:
-            move_cursor_right();
-            break;
+            switch(scancode) {
+            case 0x48:
+                move_cursor_up();
+                break;
+            case 0x50:
+                move_cursor_down();
+                break;
+            case 0x4B:
+                move_cursor_left();
+                break;
+            case 0x4D:
+                move_cursor_right();
+                break;
+            }
         }
     }
 
