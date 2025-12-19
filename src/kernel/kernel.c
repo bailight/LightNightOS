@@ -195,11 +195,11 @@ void kernel_init() {
     
     init_memory();
 
-    init_filesystem();
+    // init_filesystem();
     
     // test_malloc_demo();
     
-    scheduler_init();
+    // scheduler_init();
     
     
     // print_str("\nCreating test processes...\n");
@@ -225,7 +225,7 @@ void kernel_init() {
 
     shell_init();
     
-    scheduler_start();
+    // scheduler_start();
 
     // Сюда мы не должны попасть
     while (1) {

@@ -50,7 +50,7 @@ KERNEL_C_SRCS := $(KERNEL_DIR)/kernel.c \
                  $(KERNEL_DIR)/fs/fs.c \
                  $(KERNEL_DIR)/fs/inode.c \
                  $(KERNEL_DIR)/fs/block.c \
-                 $(KERNEL_DIR)/fs/dir.c
+                 $(KERNEL_DIR)/fs/dir.c \
 				 $(KERNEL_DIR)/shell.c
 
 KERNEL_C_OBJS := $(KERNEL_C_SRCS:$(KERNEL_DIR)/%.c=$(BUILD)/kernel/%.o)
